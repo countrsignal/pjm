@@ -108,7 +108,8 @@ def main():
 
     if args.adafactor:
         from fairseq.optim.adafactor import Adafactor
-        opt = Adafactor(model.parameters(), lr=args.learning_rate, beta1=0.9, weight_decay=0.01)
+        # Relative step is False when learning rate is set
+        opt = Adafactor(model.parameters(), lr=args.learning_rate, beta1=0.9, weight_decay=0.01, relative_step=False)
     else:
         opt = torch.optim.Adam(model.parameters(), lr=args.learning_rate, betas=(0.9, 0.98), eps=1e-9)
 
