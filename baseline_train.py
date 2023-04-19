@@ -50,7 +50,7 @@ def parse():
     parser.add_argument("--tags", nargs="+", help="W&B run tags.")
     parser.add_argument("--detect_anomaly", action="store_true", help="Set to detect anomaly.")
     parser.add_argument("--overfit", action="store_true", help="Activate overfitting unit test.")
-    parser.add_argument("--adafactor", action="store_true", help="Use Adafactor as opposed to regular Adam.")
+    parser.add_argument("--adamw", action="store_true", help="Use AdamW as opposed to regular Adam.")
     return parser.parse_args()
 
 
@@ -106,10 +106,8 @@ def main():
 
     model.dispatch_params()
 
-    if args.adafactor:
-        from fairseq.optim.adafactor import Adafactor
-        # Relative step is False when learning rate is set
-        opt = Adafactor(model.parameters(), lr=args.learning_rate, beta1=0.9, weight_decay=0.01, relative_step=False)
+    if args.adamw:
+        opt = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, betas=(0.9, 0.98), eps=1e-9, weight_decay=0.01, fused=True)
     else:
         opt = torch.optim.Adam(model.parameters(), lr=args.learning_rate, betas=(0.9, 0.98), eps=1e-9)
 
