@@ -50,6 +50,7 @@ def parse():
     parser.add_argument("--tags", nargs="+", help="W&B run tags.")
     parser.add_argument("--detect_anomaly", action="store_true", help="Set to detect anomaly.")
     parser.add_argument("--overfit", action="store_true", help="Activate overfitting unit test.")
+    parser.add_argument("--adafactor", action="store_true", help="Use Adafactor as opposed to regular Adam.")
     return parser.parse_args()
 
 
@@ -105,7 +106,11 @@ def main():
 
     model.dispatch_params()
 
-    opt = torch.optim.Adam(model.parameters(), lr=args.learning_rate, betas=(0.9, 0.98), eps=1e-9)
+    if args.adafactor:
+        from fairseq.optim.adafactor import Adafactor
+        opt = Adafactor(model.parameters(), lr=args.learning_rate, beta1=0.9, weight_decay=0.01)
+    else:
+        opt = torch.optim.Adam(model.parameters(), lr=args.learning_rate, betas=(0.9, 0.98), eps=1e-9)
 
     with wandb.init(dir=".", project="baseline", tags=args.tags):
         
@@ -148,13 +153,13 @@ def main():
                 if (batch_index + 1) % args.log_interval == 0:
                     progress_bar.set_description(f"Epoch {epoch + 1}: Loss ({ce_loss})")
 
-                    checkpoint_state = {
-                            'model_state_dict': model.state_dict(),
-                    }
-                    torch.save(
-                            checkpoint_state,
-                            os.path.join(args.model_chkpt_path, f'model_chkpt_epoch{epoch + 1}.pth')
-                    )
+                    # checkpoint_state = {
+                    #         'model_state_dict': model.state_dict(),
+                    # }
+                    # torch.save(
+                    #         checkpoint_state,
+                    #         os.path.join(args.model_chkpt_path, f'model_chkpt_epoch{epoch + 1}.pth')
+                    # )
 
 
 if __name__ == "__main__":
