@@ -190,7 +190,7 @@ class AF2SCN(object):
 
         # > Filter out spaghetti proteins
         # [NOTE] Regions with pLDDT < 70 often have a ribbon-like appearance
-        #        We filter out protein with > X % of residues having a pLDDT below 70 
+        #        We filter out proteins with > X % of residues having a pLDDT below 70 
         if _filter_by_plddt_coverage is not None:
             plddt = self._read_plddt_json()
             filtered_manifest = {}
