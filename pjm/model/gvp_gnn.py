@@ -25,19 +25,6 @@ class GVPGNN(nn.Module):
     def forward(self, graph, node_feats, edge_feats, gvp_node_masks=None):
         edge_index = torch.stack(graph.edges(), dim=0)
 
-        if torch.is_autocast_enabled():
-            scalars, vectors = node_feats
-            scalars = scalars.half()
-            vectors = vectors.half()
-            node_feats = (scalars, vectors)
-
-            scalars, vectors = edge_feats
-            scalars = scalars.half()
-            vectors = vectors.half()
-            edge_feats = (scalars, vectors)
-
-            del(scalars, vectors)
-
         node_feats = self.n_proj(node_feats, edge_index, edge_feats)
 
         for gvp_conv in self.gvp_convs:
