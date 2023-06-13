@@ -1,7 +1,6 @@
 from dgl.dataloading import GraphDataLoader
 
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 import torch.multiprocessing as mp
 import torch.distributed as dist
@@ -11,9 +10,10 @@ import wandb
 from pytorch_lightning import seed_everything
 
 from ..model.training_utils import UnitTest, _setup_logger, load_model
-from .noam_opt import get_std_opt, Adafactor
+from ..model.baseline import BaselineModel
 from .data import  Collator, AF2SCN
 from .tokenizer import Alphabet
+
 
 from multiprocessing import current_process
 from datetime import datetime
@@ -21,6 +21,7 @@ from typing import Any, Optional
 from numpy import mean
 from tqdm import tqdm
 import logging
+import json
 import os
 
 
@@ -123,18 +124,21 @@ class Pipeline(object):
             append_eos = True,
             use_msa = False
         )
-        self.scaler = GradScaler()
         self.dataset_path = training_args.dataset_path
         self.distributed = parallel_training
 
     def training_loader(self, **kwargs):
+        # Training dataset
         collate_fn = Collator(tokenizer=self.alphabet.get_batch_converter())
         train_set = AF2SCN(
                 split='train',
                 max_len=self.config.max_len,
                 dataset_path=self.dataset_path,
+                _sequence_only_baseline=self.config.multimodal,
                 _filter_by_plddt_coverage=self.config.plddt_filter
                 )
+        
+        # Callback hooks
         # << ! >> Unit test hook
         if _unit_test_enabled(self.unit_test):
             self.unit_test.msg("Dataset override triggered")
@@ -144,7 +148,8 @@ class Pipeline(object):
             self.early_stop.msg("Dataset override triggered")
             train_set = self.early_stop.get_early_stop_dataset(dataset=train_set)
 
-        if self.distributed:
+        # Init dataloaders
+        if (self.distributed) and (self.config.muiltmodal):
             loader = GraphDataLoader(
                     train_set,
                     use_ddp=True,
@@ -161,12 +166,21 @@ class Pipeline(object):
             )
         return loader
 
-    def test_loader(self, **kwargs):
+    def val_loader(self, **kwargs):
+        # Validation dataset
         collate_fn = Collator(tokenizer=self.alphabet.get_batch_converter())
-        test = AF2SCN(split='test', max_len=1022, dataset_path=self.dataset_path)
-        if self.distributed:
+        val = AF2SCN(
+            split='val',
+            max_len=1022,
+            dataset_path=self.dataset_path,
+            _sequence_only_baseline=self.config.multimodal,
+            _filter_by_plddt_coverage=None,
+            )
+        
+        # Init dataloaders
+        if (self.distributed) and (self.config.multimodal):
             loader = GraphDataLoader(
-                    test,
+                    val,
                     use_ddp=True,
                     collate_fn=collate_fn,
                     shuffle=False,
@@ -174,7 +188,7 @@ class Pipeline(object):
                     )
         else:
             loader = DataLoader(
-                    test,
+                    val,
                     collate_fn=collate_fn,
                     shuffle=False,
                     **kwargs
@@ -194,8 +208,14 @@ class Pipeline(object):
         optimizer.zero_grad()
 
         # Forward pass with autocast
-        with autocast():
-            sequences, *structures = batch.process_data(device)
+        # > BFLOAT16 does not require GradScaler!
+        with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=True):
+            
+            # >> Move data (and model) to device(s)
+            if self.config.multimodal:
+                sequences, *structures = batch.process_data(device)
+            else:
+                sequences = batch.seqs.to(device)
 
             if (epoch_index == 0) and (batch_index == 0):
                 if self.distributed:
@@ -206,18 +226,31 @@ class Pipeline(object):
                     else:
                         model = model.to(device)
 
-            cont_loss, ar_loss, total_loss = model(
-                sequences=sequences,
-                structures=structures,
-                return_embeddings=False,
-                return_loss=True
-                )
+            # >> Forward pass
+            if self.config.multimodal:
+                cont_loss, ce_loss, total_loss = model(
+                    sequences=sequences,
+                    structures=structures,
+                    return_embeddings=False,
+                    return_loss=True
+                    )
+            else:
+                ce_loss = model(sequences)
 
-        # Scale loss. Backward pass under autocast is not recommended.
-        self.scaler.scale(total_loss).backward()
-        self.scaler.step(optimizer)
-        self.scaler.update()
-        return cont_loss.detach().cpu().item(), ar_loss.detach().cpu().item()
+        # Backward pass (under autocast is not recommended)
+        if self.config.multimodal:
+            total_loss.backward()
+        else:
+            ce_loss.backward()
+        
+        # Optimizer step
+        optimizer.step()
+
+        if self.config.multimodal:
+            return cont_loss.detach().cpu().item(), ce_loss.detach().cpu().item()
+        else:
+            return (ce_loss.detach().cpu().item(),)
+
 
     def evaluate(self, model, **kwargs):
 
@@ -230,16 +263,21 @@ class Pipeline(object):
         model.eval()
         with torch.no_grad():
             losses = []
-            for batch in self.test_loader(**kwargs):
+            for batch in self.val_loader(**kwargs):
                 # Forward pass with autocast
-                with autocast():
-                    sequences, *structures = batch.process_data(device)
-                    cont_loss, ar_loss, total_loss = model.forward(
-                        sequences=sequences,
-                        structures=structures,
-                        return_embeddings=False,
-                        return_loss=True
-                        )
+                with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=True):
+                    if self.config.multimodal:
+                        sequences, *structures = batch.process_data(device)
+                        *_, total_loss = model.forward(
+                            sequences=sequences,
+                            structures=structures,
+                            return_embeddings=False,
+                            return_loss=True
+                            )
+                    else:
+                        sequences = batch.seqs.to(device)
+                        total_loss = model(sequences)
+
                 losses.append(total_loss.detach().cpu().item())
         # ( ! ) Return model to training mode
         model.train()
@@ -264,7 +302,8 @@ class Pipeline(object):
             run = wandb.init(
                 dir=".",
                 config=vars(self.config),
-                project="jessy",
+                project="joint embeddings",
+                name="jess" if self.config.multimodal else "baseline",
                 tags=self.config.tags
             )
             run_dir = run.dir
@@ -275,8 +314,9 @@ class Pipeline(object):
                 run = wandb.init(
                     dir=".",
                     config=vars(self.config),
-                    project="jessy",
-                    tags=self.config.tags
+                    project="joint embeddings",
+                    name="jess" if self.config.multimodal else "baseline",
+                    tags=self.config.tags,
                 )
                 run_dir = run.dir
 
@@ -309,20 +349,47 @@ class Pipeline(object):
                     model_args=model_args
                 )
             else:
-                model = load_model((dev0, dev1), self.alphabet, model_args)
+                # << ! >> Multi-modal or Uni-modal model
+                if self.config.multimodal:
+                    model = load_model((dev0, dev1), self.alphabet, model_args)
+                else:
+                    transformer_config = {
+                        "depth": model_args["depth"],
+                        "heads": model_args["heads"],
+                        "dim_head": model_args["dim_heads"],
+                        "dropout": model_args["dropout"],
+                    }
+                    model = BaselineModel(
+                        dim=model_args["dim"],
+                        alphabet=self.alphabet,
+                        num_layers=model_args["num_layers"],
+                        encoder_parallel_device=dev0,
+                        decoder_parallel_device=dev1,
+                        **transformer_config,
+                    )
             model = DDP(model, broadcast_buffers=False)
+
             # > Optimizer
-            opt = get_std_opt(
-                model.parameters(),
-                d_model=model_args['dim'],
-                factor=0.98 if not _unit_test_enabled(self.unit_test) else 0.1,
-                warmup=int(8653 * 4) if not _unit_test_enabled(self.unit_test) else 10,
-                weight_decay=model_args['weight_decay']
-            )
+            if self.config.multimodal:
+                opt = torch.optim.Adam(
+                    model.parameters(),
+                    lr=model_args["lr"],
+                    betas=(0.9, 0.98),
+                    eps=1e-9,
+                )
+            else:
+                opt = torch.optim.AdamW(
+                    model.parameters(),
+                    lr=model_args["lr"],
+                    betas=(0.9, 0.98),
+                    eps=1e-9,
+                    weight_decay=model_args["weight_decay"],
+                    )
 
             # > Watch gradients only for rank 0
-            if rank == 0:
-               run.watch(model, log="all", log_freq=self.config.log_interval)
+            # if rank == 0:
+            #    run.watch(model, log="all", log_freq=self.config.log_interval)
+
         ############################
         #       Model Parallel
         ############################
@@ -331,6 +398,10 @@ class Pipeline(object):
             setattr(self, "unit_test", unit_test_callback)
             if _unit_test_enabled(self.unit_test):
                 self.unit_test.msg("Unit test initialized")
+            # Set up early stopping callback
+            setattr(self, "early_stop", early_stop_callback)
+            if _early_stop_enabled(self.early_stop):
+                self.early_stop.msg("Early stopping initialized")
             
             # Enable model parallelism if there are 2 GPUs
             # Otherwise, use single GPU
@@ -349,35 +420,41 @@ class Pipeline(object):
                     model_args=model_args
                 )
             else:
-                model = load_model((dev0, dev1), self.alphabet, model_args)
-            # > Watch model parameters and gradients
-            run.watch(model, log="all", log_freq=self.config.log_interval)
-            # Set up early stopping callback
-            setattr(self, "early_stop", early_stop_callback)
-            if _early_stop_enabled(self.early_stop):
-                self.early_stop.msg("Early stopping initialized")
+               # << ! >> Multi-modal or Uni-modal model
+                if self.config.multimodal:
+                    model = load_model((dev0, dev1), self.alphabet, model_args)
+                else:
+                    transformer_config = {
+                        "depth": model_args["depth"],
+                        "heads": model_args["heads"],
+                        "dim_head": model_args["dim_heads"],
+                        "dropout": model_args["dropout"],
+                    }
+                    model = BaselineModel(
+                        dim=model_args["dim"],
+                        alphabet=self.alphabet,
+                        num_layers=model_args["num_layers"],
+                        encoder_parallel_device=dev0,
+                        decoder_parallel_device=dev1,
+                        **transformer_config,
+                    )
             
             # > Optimizer
-            opt = get_std_opt(
-                model.parameters(),
-                d_model=model_args['dim'],
-                factor=0.98 if not _unit_test_enabled(self.unit_test) else 0.1,
-                warmup=int(8653 * 4) if not _unit_test_enabled(self.unit_test) else 100,
-                weight_decay=model_args['weight_decay']
-            )
-            # opt = Adafactor(
-            #     model.parameters(),
-            #     lr=None,
-            #     weight_decay=model_args['weight_decay'],
-            #     warmup_init=True
-            # )
-            # opt = torch.optim.Adam(
-            #     model.parameters(),
-            #     lr=model_args['lr'],
-            #     betas=(0.9, 0.98),
-            #     eps=1e-9,
-            #     weight_decay=model_args['weight_decay']
-            # )
+            if self.config.multimodal:
+                opt = torch.optim.Adam(
+                    model.parameters(),
+                    lr=model_args["lr"],
+                    betas=(0.9, 0.98),
+                    eps=1e-9,
+                )
+            else:
+                opt = torch.optim.AdamW(
+                    model.parameters(),
+                    lr=model_args["lr"],
+                    betas=(0.9, 0.98),
+                    eps=1e-9,
+                    weight_decay=model_args["weight_decay"],
+                    )
 
         # ( ! ) Model Training
         best_eval = 1e6
@@ -395,7 +472,7 @@ class Pipeline(object):
                     enumerate(train_loader),
                     total=len(train_loader),
                     desc=f"Rank {rank}: Epoch 1, Loss (NA)",
-                    mininterval=1 if _unit_test_enabled(self.unit_test) else 50,
+                    mininterval=1 if _unit_test_enabled(self.unit_test) else self.config.log_interval,
                     position=rank
                     )
             else:
@@ -403,7 +480,7 @@ class Pipeline(object):
                     enumerate(train_loader),
                     total=len(train_loader),
                     desc=f"Epoch 1, Loss (NA)",
-                    mininterval=1 if _unit_test_enabled(self.unit_test) else 50,
+                    mininterval=1 if _unit_test_enabled(self.unit_test) else self.config.log_interval,
                     )
             
             # > Early stopping optimizer hook

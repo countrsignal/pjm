@@ -27,6 +27,8 @@ def parse():
                         action="store_true", help="Overfit unit test.")
     parser.add_argument("-s", "--early_stopping",
                         action="store_true", help="Overfit uni test.")
+    parser.add_argument("--multimodal", action="store_true",
+                        help="Use multimodal or unimodal architecture.")
     parser.add_argument("--dataset_path", type=str, help="Set path to pre-computed data.")
     parser.add_argument("--plddt_filter", type=float,
                         default=0.20, help="Filter proteins by pLDDT coverage.")
