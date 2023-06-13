@@ -1,0 +1,16 @@
+# Ignore vscode
+.vscode/
+
+# Ignore wandb directory
+wandb/
+
+# Ignore checkpoints directory
+expriment_ckpts/
+
+# Ignore slurm script
+slurm_script.sh
+
+# Ignore pycche
+pjm/__pycache__/
+pjm/model/__pycache__/
+pjm/utils/__pycache__/
