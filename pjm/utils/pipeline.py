@@ -1,6 +1,7 @@
 from dgl.dataloading import GraphDataLoader
 
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 import torch.multiprocessing as mp
 import torch.distributed as dist
@@ -18,10 +19,8 @@ from .tokenizer import Alphabet
 from multiprocessing import current_process
 from datetime import datetime
 from typing import Any, Optional
-from numpy import mean
 from tqdm import tqdm
 import logging
-import json
 import os
 
 
@@ -106,6 +105,25 @@ def _early_stop_enabled(early_stop):
     return issubclass(early_stop.__class__, EarlyStopping)
 
 
+class WarmupLinearSchedule(LambdaLR):
+    """ Linear warmup and then linear decay.
+        Linearly increases learning rate from 0 to 1 over `warmup_steps` training steps.
+        Linearly decreases learning rate from 1. to 0. over remaining `t_total - warmup_steps`
+        steps.
+    """
+    def __init__(self, optimizer, warmup_steps, t_total, last_epoch=-1):
+        self.warmup_steps = warmup_steps
+        self.t_total = t_total
+        super(WarmupLinearSchedule, self).__init__(
+            optimizer, self.lr_lambda, last_epoch=last_epoch)
+
+    def lr_lambda(self, step):
+        if step < self.warmup_steps:
+            return float(step) / float(max(1, self.warmup_steps))
+        return max(0.0, float(self.t_total - step) / float(
+            max(1.0, self.t_total - self.warmup_steps)))
+
+
 class Pipeline(object):
 
     def __init__(
@@ -134,7 +152,7 @@ class Pipeline(object):
                 split='train',
                 max_len=self.config.max_len,
                 dataset_path=self.dataset_path,
-                _sequence_only_baseline=self.config.multimodal,
+                _sequence_only_baseline=False if self.config.multimodal else True,
                 _filter_by_plddt_coverage=self.config.plddt_filter
                 )
         
@@ -173,7 +191,7 @@ class Pipeline(object):
             split='val',
             max_len=1022,
             dataset_path=self.dataset_path,
-            _sequence_only_baseline=self.config.multimodal,
+            _sequence_only_baseline=False if self.config.multimodal else True,
             _filter_by_plddt_coverage=None,
             )
         
@@ -195,7 +213,7 @@ class Pipeline(object):
             )
         return loader
 
-    def train_step(self, epoch_index, batch_index, batch, model, optimizer):
+    def train_step(self, epoch_index, batch_index, batch, model, optimizer, scheduler=None):
         
         if self.distributed:
             device = model.module.encoder_parallel_device
@@ -245,12 +263,14 @@ class Pipeline(object):
         
         # Optimizer step
         optimizer.step()
+        # Scheduler step
+        if scheduler is not None:
+            scheduler.step()
 
         if self.config.multimodal:
-            return cont_loss.detach().cpu().item(), ce_loss.detach().cpu().item()
+            return (cont_loss.detach().cpu().item(), ce_loss.detach().cpu().item())
         else:
             return (ce_loss.detach().cpu().item(),)
-
 
     def evaluate(self, model, **kwargs):
 
@@ -281,7 +301,7 @@ class Pipeline(object):
                 losses.append(total_loss.detach().cpu().item())
         # ( ! ) Return model to training mode
         model.train()
-        return mean(losses)
+        return sum(losses) / len(losses)
 
     def fit(
         self,
@@ -377,6 +397,7 @@ class Pipeline(object):
                     betas=(0.9, 0.98),
                     eps=1e-9,
                 )
+                lr_scheduler = None
             else:
                 opt = torch.optim.AdamW(
                     model.parameters(),
@@ -385,6 +406,10 @@ class Pipeline(object):
                     eps=1e-9,
                     weight_decay=model_args["weight_decay"],
                     )
+                if self.config.lr_scheduler is not None:
+                    lr_scheduler = WarmupLinearSchedule(optimizer=opt, **self.config.lr_scheduler)
+                else:
+                    lr_scheduler = None
 
             # > Watch gradients only for rank 0
             # if rank == 0:
@@ -447,6 +472,7 @@ class Pipeline(object):
                     betas=(0.9, 0.98),
                     eps=1e-9,
                 )
+                lr_scheduler = None
             else:
                 opt = torch.optim.AdamW(
                     model.parameters(),
@@ -455,9 +481,13 @@ class Pipeline(object):
                     eps=1e-9,
                     weight_decay=model_args["weight_decay"],
                     )
+                if self.config.lr_scheduler is not None:
+                    lr_scheduler = WarmupLinearSchedule(optimizer=opt, **self.config.lr_scheduler)
+                else:
+                    lr_scheduler = None
 
         # ( ! ) Model Training
-        best_eval = 1e6
+        best_eval = float("inf")
         for epoch_index in range(self.num_epochs):
             # > Initialize training data loader
             train_loader = self.training_loader(**dataloader_args)
@@ -471,7 +501,7 @@ class Pipeline(object):
                 training_progress_bar = tqdm(
                     enumerate(train_loader),
                     total=len(train_loader),
-                    desc=f"Rank {rank}: Epoch 1, Loss (NA)",
+                    desc=f"Rank {rank}: Epoch 1, Loss (NA), Best Val Loss: (NA)",
                     mininterval=1 if _unit_test_enabled(self.unit_test) else self.config.log_interval,
                     position=rank
                     )
@@ -479,7 +509,7 @@ class Pipeline(object):
                 training_progress_bar = tqdm(
                     enumerate(train_loader),
                     total=len(train_loader),
-                    desc=f"Epoch 1, Loss (NA)",
+                    desc=f"Epoch 1, Loss (NA), Best Val Loss: (NA)",
                     mininterval=1 if _unit_test_enabled(self.unit_test) else self.config.log_interval,
                     )
             
@@ -491,88 +521,122 @@ class Pipeline(object):
             # > Epoch Loop
             for batch_index, batch in training_progress_bar:
 
-                losses = self.train_step(epoch_index, batch_index, batch, model, opt)
+                losses = self.train_step(epoch_index, batch_index, batch, model, opt, lr_scheduler)
 
                 # > Logging training loss
-                if not self.distributed:
-                    if (batch_index + 1) % self.config.log_interval == 0:
-                        with torch.no_grad():
-                            dict_norm = model.structure_queries['queries'].norm().item() if hasattr(model, "structure_queries") else 0
-                            node_proj_norm = model.structure_encoder[0].n_proj.ffn[0].wv.weight.norm().item()
-                            seq_enc_attn_norm = model.sequence_encoder[0].layers[0].fn.to_qkv.weight.norm().item()
-                            seq_dec_attn_norm = model.decoder.stack[0].layers[0].layers[0].fn.to_qkv.weight.norm().item()
-                            seq_dec_logit_layer_norm = model.decoder.stack[-1].weight.norm().item()
-
-                        run.log({
-                            "Learning Rate": opt.param_groups[0]['lr'],
-                            "Training Loss": sum(losses),
-                            "Contrastive Loss": losses[0],
-                            "Autoregressive Loss": losses[1],
-                            "Tempurature": model.temperature['temperature'].item(),
-                            "Structure Query Norm": dict_norm,
-                            "Structure Node Projection Norm": node_proj_norm,
-                            "Sequence Encoder Attention Norm": seq_enc_attn_norm,
-                            "Sequence Decoder Attention Norm": seq_dec_attn_norm,
-                            "Sequence Decoder Logit Layer Norm": seq_dec_logit_layer_norm,
-                        })
-
-                    if (batch_index + 1) % training_progress_bar.mininterval == 0:
-                        training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)})")
-                else:
+                if (self.distributed) and (self.config.multimodal):
                     if rank == 0:
                         if (batch_index + 1) % self.config.log_interval == 0:
+                            # Evaluate on validation set
+                            val_loss = self.evaluate(model, **dataloader_args)
+                            if best_eval > val_loss:
+                                best_eval = val_loss
+                                timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
+                                checkpoint_state = {
+                                        'epoch': epoch_index,
+                                        'model_state_dict': model.state_dict(),
+                                        'optimizer_state_dict': opt.state_dict()
+                                        }
+                                torch.save(
+                                        checkpoint_state,
+                                        os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
+                                        )
+                            
+                            # Update TQDM progress bar
+                            training_progress_bar.set_description(f"Rank {rank}: Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: ({best_eval})")
 
-                            with torch.no_grad():
-                                dict_norm = model.module.structure_queries['queries'].norm().item() if hasattr(model.module, "structure_queries") else 0
-                                node_proj_norm = model.module.structure_encoder[0].n_proj.ffn[0].wv.weight.norm().item()
-                                seq_enc_attn_norm = model.module.sequence_encoder[0].layers[0].fn.to_qkv.weight.norm().item()
-                                seq_dec_attn_norm = model.module.decoder.stack[0].layers[0].layers[0].fn.to_qkv.weight.norm().item()
-                                seq_dec_logit_layer_norm = model.module.decoder.stack[-1].weight.norm().item()
-
+                            # Log to wandb
                             run.log({
                                 "Learning Rate": opt.param_groups[0]['lr'],
-                                "Training Loss": sum(losses),
+                                "Total Loss": sum(losses),
                                 "Contrastive Loss": losses[0],
-                                "Autoregressive Loss": losses[1],
-                                "Tempurature": model.module.temperature['temperature'].item(),
-                                "Structure Query Norm": dict_norm,
-                                "Structure Node Projection Norm": node_proj_norm,
-                                "Sequence Encoder Attention Norm": seq_enc_attn_norm,
-                                "Sequence Decoder Attention Norm": seq_dec_attn_norm,
-                                "Sequence Decoder Logit Layer Norm": seq_dec_logit_layer_norm,
+                                "Cross-Entropy Loss": losses[1],
+                                "Validation Set Loss": val_loss,
                             })
 
-                    if (batch_index + 1) % training_progress_bar.mininterval == 0:
-                        training_progress_bar.set_description(f"Rank {rank}: Epoch {epoch_index + 1}, Loss ({sum(losses)})")
+                elif (not self.distributed) and (self.config.multimodal):
+                    if (batch_index + 1) % self.config.log_interval == 0:
+                        # Evaluate on validation set
+                        val_loss = self.evaluate(model, **dataloader_args)
+                        if best_eval > val_loss:
+                            best_eval = val_loss
+                            timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
+                            checkpoint_state = {
+                                    'epoch': epoch_index,
+                                    'model_state_dict': model.state_dict(),
+                                    'optimizer_state_dict': opt.state_dict()
+                                    }
+                            torch.save(
+                                    checkpoint_state,
+                                    os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
+                                    )
 
-            # > Evaluate on test set
-            loss = self.evaluate(model, **dataloader_args)
-            if loss < best_eval:
-                best_eval = loss
-                timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
-                if not self.distributed:
-                    print(f"Validation on Epoch {epoch_index}: {loss}")
-                    checkpoint_state = {
-                            'epoch': epoch_index,
-                            'model_state_dict': model.state_dict(),
-                            'optimizer_state_dict': opt.state_dict()
-                            }
-                    torch.save(
-                            checkpoint_state,
-                            os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
-                            )
-                else:
+                        # Update TQDM progress bar
+                        training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: ({best_eval})")
+
+                        # Log to wandb
+                        run.log({
+                            "Learning Rate": opt.param_groups[0]['lr'],
+                            "Total Loss": sum(losses),
+                            "Contrastive Loss": losses[0],
+                            "Cross-Entropy Loss": losses[1],
+                            "Validation Set Loss": val_loss,
+                        })
+
+                elif (self.distributed) and (not self.config.multimodal):
                     if rank == 0:
-                        print(f"Validation on Epoch {epoch_index}: {loss}")
-                        checkpoint_state = {
-                                'epoch': epoch_index,
-                                'model_state_dict': model.state_dict(),
-                                'optimizer_state_dict': opt.state_dict()
-                                }
-                        torch.save(
-                                checkpoint_state,
-                                os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
-                                )
+                        if (batch_index + 1) % self.config.log_interval == 0:
+                            # Evaluate on validation set
+                            val_loss = self.evaluate(model, **dataloader_args)
+                            if best_eval > val_loss:
+                                best_eval = val_loss
+                                timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
+                                checkpoint_state = {
+                                        'epoch': epoch_index,
+                                        'model_state_dict': model.state_dict(),
+                                        'optimizer_state_dict': opt.state_dict()
+                                        }
+                                torch.save(
+                                        checkpoint_state,
+                                        os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
+                                        )
+
+                            # Update TQDM progress bar
+                            training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: ({best_eval})")
+
+                            # Log to wandb
+                            run.log({
+                                "Learning Rate": opt.param_groups[0]['lr'],
+                                "Cross-Entropy Loss": losses[0],
+                                "Validation Set Loss": val_loss,
+                            })
+
+                else:
+                    if (batch_index + 1) % self.config.log_interval == 0:
+                        # Evaluate on validation set
+                        val_loss = self.evaluate(model, **dataloader_args)
+                        if best_eval > val_loss:
+                            best_eval = val_loss
+                            timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
+                            checkpoint_state = {
+                                    'epoch': epoch_index,
+                                    'model_state_dict': model.state_dict(),
+                                    'optimizer_state_dict': opt.state_dict()
+                                    }
+                            torch.save(
+                                    checkpoint_state,
+                                    os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
+                                    )
+                         
+                        # Update TQDM progress bar
+                        training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: ({best_eval})")
+
+                        # Log to wandb
+                        run.log({
+                            "Learning Rate": opt.param_groups[0]['lr'],
+                            "Cross-Entropy Loss": losses[0],
+                            "Validation Set Loss": val_loss,
+                        })
 
         # > Close out run
         if self.distributed:
