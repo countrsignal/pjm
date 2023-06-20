@@ -31,7 +31,7 @@ def parse():
                         help="Use multimodal or unimodal architecture.")
     parser.add_argument("--dataset_path", type=str, help="Set path to pre-computed data.")
     parser.add_argument("--plddt_filter", type=float,
-                        default=0.20, help="Filter proteins by pLDDT coverage.")
+                        default=None, help="Filter proteins by pLDDT coverage.")
     parser.add_argument("--model_config_path", type=str, help="Set path to model config json.")
     parser.add_argument("--log_interval", type=int,
                         default=5, help="Set logging frequency.")
