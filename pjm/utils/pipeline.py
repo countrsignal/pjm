@@ -406,7 +406,7 @@ class Pipeline(object):
                     eps=1e-9,
                     weight_decay=model_args["weight_decay"],
                     )
-                if self.config.lr_scheduler is not None:
+                if self.config.lr_scheduler:
                     lr_scheduler = WarmupLinearSchedule(optimizer=opt, **self.config.lr_scheduler)
                 else:
                     lr_scheduler = None
@@ -481,7 +481,7 @@ class Pipeline(object):
                     eps=1e-9,
                     weight_decay=model_args["weight_decay"],
                     )
-                if self.config.lr_scheduler is not None:
+                if self.config.lr_scheduler:
                     lr_scheduler = WarmupLinearSchedule(optimizer=opt, **self.config.lr_scheduler)
                 else:
                     lr_scheduler = None
