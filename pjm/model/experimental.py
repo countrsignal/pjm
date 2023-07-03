@@ -9,7 +9,7 @@ from typing import Optional, NewType
 from .gvp_gnn import GVPGNN
 from .decoder import MultiModalDecoder
 from .attention import Transformer, AttnLayerNorm, get_attn_mask
-from ..utils.data import (
+from .masking import (
     get_sequence_mask,
     apply_sequence_mask,
     apply_random_token_swap,

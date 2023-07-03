@@ -9,7 +9,7 @@ from einops import rearrange
 
 from .attention import get_attn_mask, AttnLayerNorm, Transformer
 from .decoder import BaselineDecoder
-from ..utils.data import (
+from .masking import (
     get_sequence_mask,
     apply_sequence_mask,
     apply_random_token_swap,

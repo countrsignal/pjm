@@ -10,7 +10,7 @@ import torch
 import wandb
 from pytorch_lightning import seed_everything
 
-from ..model.training_utils import UnitTest, _setup_logger, load_model
+from .training_utils import UnitTest, _setup_logger, load_model
 from ..model.baseline import BaselineModel
 from .data import  Collator, AF2SCN
 from .tokenizer import Alphabet
