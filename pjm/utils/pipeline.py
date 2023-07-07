@@ -167,7 +167,7 @@ class Pipeline(object):
             train_set = self.early_stop.get_early_stop_dataset(dataset=train_set)
 
         # Init dataloaders
-        if (self.distributed) and (self.config.muiltmodal):
+        if (self.distributed) and (self.config.multimodal):
             loader = GraphDataLoader(
                     train_set,
                     use_ddp=True,
