@@ -27,6 +27,7 @@ def standard_structure_module(
     edge_in_dims,
     num_edge_gvps: int,
     num_mp_layers: int,
+    final_proj_dim: int,
     num_tf_blocks: int,
     tf_dim: int,
     tf_depth: int,
@@ -43,6 +44,7 @@ def standard_structure_module(
            edge_in_dims,
            num_edge_gvps,
            num_mp_layers,
+           final_proj_dim,
            **kwargs
        )
       ]
@@ -350,6 +352,6 @@ class CoCa(nn.Module):
     sim = sim * self.temperature['temperature'].exp()
     contrastive_loss = InfoNCE_loss(sim)
     contrastive_loss = contrastive_loss * self.contrastive_loss_weight
-    # total_loss = cross_entropy_loss + contrastive_loss
+    total_loss = cross_entropy_loss + contrastive_loss
 
-    return contrastive_loss, cross_entropy_loss
+    return contrastive_loss, cross_entropy_loss, total_loss

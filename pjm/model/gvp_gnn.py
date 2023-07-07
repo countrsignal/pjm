@@ -12,6 +12,7 @@ class GVPGNN(nn.Module):
         edge_in_dims,
         num_edge_gvps,
         num_mp_layers,
+        final_proj_dim,
         **kwargs
     ):
         super(GVPGNN, self).__init__()
@@ -20,7 +21,7 @@ class GVPGNN(nn.Module):
             GVPConvLayer(node_dims=node_out_dims, edge_dims=edge_in_dims, n_edge_gvps=num_edge_gvps, **kwargs) for _ in range(num_mp_layers)
         )
         node_out_dims = node_out_dims[0] + node_out_dims[1] * 3
-        self.embed_gvp_output = nn.Linear(node_out_dims, node_out_dims)
+        self.embed_gvp_output = nn.Linear(node_out_dims, final_proj_dim)
     
     def forward(self, graph, node_feats, edge_feats, gvp_node_masks=None):
         edge_index = torch.stack(graph.edges(), dim=0)
