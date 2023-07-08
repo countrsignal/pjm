@@ -501,7 +501,7 @@ class Pipeline(object):
                 training_progress_bar = tqdm(
                     enumerate(train_loader),
                     total=len(train_loader),
-                    desc=f"Rank {rank}: Epoch 1, Loss (NA), Best Val Loss: (NA)",
+                    desc=f"Rank {rank}: Epoch {epoch_index + 1}, Loss (NA), Best Val Loss: (NA)",
                     mininterval=1 if _unit_test_enabled(self.unit_test) else self.config.log_interval,
                     position=rank
                     )
@@ -509,7 +509,7 @@ class Pipeline(object):
                 training_progress_bar = tqdm(
                     enumerate(train_loader),
                     total=len(train_loader),
-                    desc=f"Epoch 1, Loss (NA), Best Val Loss: (NA)",
+                    desc=f"Epoch {epoch_index + 1}, Loss (NA), Best Val Loss: (NA)",
                     mininterval=1 if _unit_test_enabled(self.unit_test) else self.config.log_interval,
                     )
             
