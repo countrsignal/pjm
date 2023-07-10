@@ -227,7 +227,7 @@ class Pipeline(object):
 
         # Forward pass with autocast
         # > BFLOAT16 does not require GradScaler!
-        with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=True):
+        with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=self.config.bfloat16):
             
             # >> Move data (and model) to device(s)
             if self.config.multimodal:
@@ -285,7 +285,7 @@ class Pipeline(object):
             losses = []
             for batch in self.val_loader(**kwargs):
                 # Forward pass with autocast
-                with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=True):
+                with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=self.config.bfloat16):
                     if self.config.multimodal:
                         sequences, *structures = batch.process_data(device)
                         *_, total_loss = model.forward(
@@ -380,7 +380,7 @@ class Pipeline(object):
                         "dropout": model_args["dropout"],
                     }
                     model = BaselineModel(
-                        dim=model_args["dim"],
+                        dim=model_args["dim_heads"],
                         alphabet=self.alphabet,
                         num_layers=model_args["num_layers"],
                         encoder_parallel_device=dev0,
