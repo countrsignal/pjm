@@ -45,6 +45,8 @@ def parse():
 def main(num_gpus, enable_parallel_training):
     # Parse arguements
     args = parse()
+    if args.bfloat16:
+        print("Mixed precision training with BFloat16 is enabled!")
 
     ############
     #   Setup
