@@ -487,7 +487,9 @@ class Pipeline(object):
                     lr_scheduler = None
 
         # ( ! ) Model Training
+        losses = (None, None)
         best_eval = float("inf")
+        global_step = 0
         for epoch_index in range(self.num_epochs):
             # > Initialize training data loader
             train_loader = self.training_loader(**dataloader_args)
@@ -499,10 +501,20 @@ class Pipeline(object):
                 train_loader.set_epoch(epoch_index)
 
                 if rank == 0:
+                    if all([l is None for l in losses]):
+                        loss_msg = "NA"
+                    else:
+                        loss_msg = sum(losses)
+                    
+                    if best_eval == float("inf"):
+                        eval_msg = "NA"
+                    else:
+                        eval_msg = best_eval
+                    
                     training_progress_bar = tqdm(
                         enumerate(train_loader),
                         total=len(train_loader),
-                        desc=f"Rank {rank}: Epoch {epoch_index + 1}, Loss (NA), Best Val Loss: (NA)",
+                        desc=f"Rank {rank}: Epoch {epoch_index + 1}, Loss ({loss_msg}), Best Val Loss: ({eval_msg})",
                         mininterval=1 if _unit_test_enabled(self.unit_test) else self.config.log_interval,
                         position=rank
                         )
@@ -510,10 +522,21 @@ class Pipeline(object):
                     training_progress_bar = enumerate(train_loader)
 
             else:
+
+                if all([l is None for l in losses]):
+                    loss_msg = "NA"
+                else:
+                    loss_msg = sum(losses)
+                
+                if best_eval == float("inf"):
+                    eval_msg = "NA"
+                else:
+                    eval_msg = best_eval
+                
                 training_progress_bar = tqdm(
                     enumerate(train_loader),
                     total=len(train_loader),
-                    desc=f"Epoch {epoch_index + 1}, Loss (NA), Best Val Loss: (NA)",
+                    desc=f"Epoch {epoch_index + 1}, Loss ({loss_msg}), Best Val Loss: ({eval_msg})",
                     mininterval=1 if _unit_test_enabled(self.unit_test) else self.config.log_interval,
                     )
             
