@@ -498,13 +498,17 @@ class Pipeline(object):
                 # > We need to repeat the random partition every epoch to guarantee randomness
                 train_loader.set_epoch(epoch_index)
 
-                training_progress_bar = tqdm(
-                    enumerate(train_loader),
-                    total=len(train_loader),
-                    desc=f"Rank {rank}: Epoch {epoch_index + 1}, Loss (NA), Best Val Loss: (NA)",
-                    mininterval=1 if _unit_test_enabled(self.unit_test) else self.config.log_interval,
-                    position=rank
-                    )
+                if rank == 0:
+                    training_progress_bar = tqdm(
+                        enumerate(train_loader),
+                        total=len(train_loader),
+                        desc=f"Rank {rank}: Epoch {epoch_index + 1}, Loss (NA), Best Val Loss: (NA)",
+                        mininterval=1 if _unit_test_enabled(self.unit_test) else self.config.log_interval,
+                        position=rank
+                        )
+                else:
+                    training_progress_bar = enumerate(train_loader)
+
             else:
                 training_progress_bar = tqdm(
                     enumerate(train_loader),
