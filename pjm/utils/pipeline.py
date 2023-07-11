@@ -487,9 +487,9 @@ class Pipeline(object):
                     lr_scheduler = None
 
         # ( ! ) Model Training
+        global_step = 0
         losses = (None, None)
         best_eval = float("inf")
-        global_step = 0
         for epoch_index in range(self.num_epochs):
             # > Initialize training data loader
             train_loader = self.training_loader(**dataloader_args)
@@ -549,6 +549,7 @@ class Pipeline(object):
             for batch_index, batch in training_progress_bar:
 
                 losses = self.train_step(epoch_index, batch_index, batch, model, opt, lr_scheduler)
+                global_step += 1
 
                 # Skip Validation if unit test is enabled
                 if _unit_test_enabled(self.unit_test):
@@ -564,7 +565,7 @@ class Pipeline(object):
                     # > Logging training and validation loss
                     if (self.distributed) and (self.config.multimodal):
                         if rank == 0:
-                            if (batch_index + 1) % self.config.log_interval == 0:
+                            if global_step % self.config.log_interval == 0:
                                 # Evaluate on validation set
                                 val_loss = self.evaluate(model, **dataloader_args)
                                 if best_eval > val_loss:
@@ -593,7 +594,7 @@ class Pipeline(object):
                                 })
 
                     elif (not self.distributed) and (self.config.multimodal):
-                        if (batch_index + 1) % self.config.log_interval == 0:
+                        if global_step % self.config.log_interval == 0:
                             # Evaluate on validation set
                             val_loss = self.evaluate(model, **dataloader_args)
                             if best_eval > val_loss:
@@ -623,7 +624,7 @@ class Pipeline(object):
 
                     elif (self.distributed) and (not self.config.multimodal):
                         if rank == 0:
-                            if (batch_index + 1) % self.config.log_interval == 0:
+                            if global_step % self.config.log_interval == 0:
                                 # Evaluate on validation set
                                 val_loss = self.evaluate(model, **dataloader_args)
                                 if best_eval > val_loss:
@@ -650,7 +651,7 @@ class Pipeline(object):
                                 })
 
                     else:
-                        if (batch_index + 1) % self.config.log_interval == 0:
+                        if global_step % self.config.log_interval == 0:
                             # Evaluate on validation set
                             val_loss = self.evaluate(model, **dataloader_args)
                             if best_eval > val_loss:
