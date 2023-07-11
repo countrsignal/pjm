@@ -406,8 +406,8 @@ class Pipeline(object):
                     eps=1e-9,
                     weight_decay=model_args["weight_decay"],
                     )
-                if self.config.lr_scheduler:
-                    lr_scheduler = WarmupLinearSchedule(optimizer=opt, **self.config.lr_scheduler)
+                if model_args["lr_scheduler"]:
+                    lr_scheduler = WarmupLinearSchedule(optimizer=opt, **model_args["lr_scheduler"])
                 else:
                     lr_scheduler = None
 
@@ -481,8 +481,8 @@ class Pipeline(object):
                     eps=1e-9,
                     weight_decay=model_args["weight_decay"],
                     )
-                if self.config.lr_scheduler:
-                    lr_scheduler = WarmupLinearSchedule(optimizer=opt, **self.config.lr_scheduler)
+                if model_args["lr_scheduler"]:
+                    lr_scheduler = WarmupLinearSchedule(optimizer=opt, **model_args["lr_scheduler"])
                 else:
                     lr_scheduler = None
 
@@ -527,68 +527,49 @@ class Pipeline(object):
 
                 losses = self.train_step(epoch_index, batch_index, batch, model, opt, lr_scheduler)
 
-                # > Logging training loss
-                if (self.distributed) and (self.config.multimodal):
-                    if rank == 0:
-                        if (batch_index + 1) % self.config.log_interval == 0:
-                            # Evaluate on validation set
-                            val_loss = self.evaluate(model, **dataloader_args)
-                            if best_eval > val_loss:
-                                best_eval = val_loss
-                                timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
-                                checkpoint_state = {
-                                        'epoch': epoch_index,
-                                        'model_state_dict': model.state_dict(),
-                                        'optimizer_state_dict': opt.state_dict()
-                                        }
-                                torch.save(
-                                        checkpoint_state,
-                                        os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
-                                        )
-                            
-                            # Update TQDM progress bar
-                            training_progress_bar.set_description(f"Rank {rank}: Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: ({best_eval})")
+                # Skip Validation if unit test is enabled
+                if _unit_test_enabled(self.unit_test):
+                    # > Only update TQDM progress bar and log to wandb
+                    training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: (NA)")
+                    run.log({
+                        "Learning Rate": opt.param_groups[0]['lr'],
+                        "Total Loss": sum(losses),
+                        "Contrastive Loss": losses[0],
+                        "Cross-Entropy Loss": losses[1],
+                    })
+                else:
+                    # > Logging training and validation loss
+                    if (self.distributed) and (self.config.multimodal):
+                        if rank == 0:
+                            if (batch_index + 1) % self.config.log_interval == 0:
+                                # Evaluate on validation set
+                                val_loss = self.evaluate(model, **dataloader_args)
+                                if best_eval > val_loss:
+                                    best_eval = val_loss
+                                    timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
+                                    checkpoint_state = {
+                                            'epoch': epoch_index,
+                                            'model_state_dict': model.state_dict(),
+                                            'optimizer_state_dict': opt.state_dict()
+                                            }
+                                    torch.save(
+                                            checkpoint_state,
+                                            os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
+                                            )
+                                
+                                # Update TQDM progress bar
+                                training_progress_bar.set_description(f"Rank {rank}: Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: ({best_eval})")
 
-                            # Log to wandb
-                            run.log({
-                                "Learning Rate": opt.param_groups[0]['lr'],
-                                "Total Loss": sum(losses),
-                                "Contrastive Loss": losses[0],
-                                "Cross-Entropy Loss": losses[1],
-                                "Validation Set Loss": val_loss,
-                            })
+                                # Log to wandb
+                                run.log({
+                                    "Learning Rate": opt.param_groups[0]['lr'],
+                                    "Total Loss": sum(losses),
+                                    "Contrastive Loss": losses[0],
+                                    "Cross-Entropy Loss": losses[1],
+                                    "Validation Set Loss": val_loss,
+                                })
 
-                elif (not self.distributed) and (self.config.multimodal):
-                    if (batch_index + 1) % self.config.log_interval == 0:
-                        # Evaluate on validation set
-                        val_loss = self.evaluate(model, **dataloader_args)
-                        if best_eval > val_loss:
-                            best_eval = val_loss
-                            timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
-                            checkpoint_state = {
-                                    'epoch': epoch_index,
-                                    'model_state_dict': model.state_dict(),
-                                    'optimizer_state_dict': opt.state_dict()
-                                    }
-                            torch.save(
-                                    checkpoint_state,
-                                    os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
-                                    )
-
-                        # Update TQDM progress bar
-                        training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: ({best_eval})")
-
-                        # Log to wandb
-                        run.log({
-                            "Learning Rate": opt.param_groups[0]['lr'],
-                            "Total Loss": sum(losses),
-                            "Contrastive Loss": losses[0],
-                            "Cross-Entropy Loss": losses[1],
-                            "Validation Set Loss": val_loss,
-                        })
-
-                elif (self.distributed) and (not self.config.multimodal):
-                    if rank == 0:
+                    elif (not self.distributed) and (self.config.multimodal):
                         if (batch_index + 1) % self.config.log_interval == 0:
                             # Evaluate on validation set
                             val_loss = self.evaluate(model, **dataloader_args)
@@ -611,36 +592,66 @@ class Pipeline(object):
                             # Log to wandb
                             run.log({
                                 "Learning Rate": opt.param_groups[0]['lr'],
-                                "Cross-Entropy Loss": losses[0],
+                                "Total Loss": sum(losses),
+                                "Contrastive Loss": losses[0],
+                                "Cross-Entropy Loss": losses[1],
                                 "Validation Set Loss": val_loss,
                             })
 
-                else:
-                    if (batch_index + 1) % self.config.log_interval == 0:
-                        # Evaluate on validation set
-                        val_loss = self.evaluate(model, **dataloader_args)
-                        if best_eval > val_loss:
-                            best_eval = val_loss
-                            timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
-                            checkpoint_state = {
-                                    'epoch': epoch_index,
-                                    'model_state_dict': model.state_dict(),
-                                    'optimizer_state_dict': opt.state_dict()
-                                    }
-                            torch.save(
-                                    checkpoint_state,
-                                    os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
-                                    )
-                         
-                        # Update TQDM progress bar
-                        training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: ({best_eval})")
+                    elif (self.distributed) and (not self.config.multimodal):
+                        if rank == 0:
+                            if (batch_index + 1) % self.config.log_interval == 0:
+                                # Evaluate on validation set
+                                val_loss = self.evaluate(model, **dataloader_args)
+                                if best_eval > val_loss:
+                                    best_eval = val_loss
+                                    timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
+                                    checkpoint_state = {
+                                            'epoch': epoch_index,
+                                            'model_state_dict': model.state_dict(),
+                                            'optimizer_state_dict': opt.state_dict()
+                                            }
+                                    torch.save(
+                                            checkpoint_state,
+                                            os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
+                                            )
 
-                        # Log to wandb
-                        run.log({
-                            "Learning Rate": opt.param_groups[0]['lr'],
-                            "Cross-Entropy Loss": losses[0],
-                            "Validation Set Loss": val_loss,
-                        })
+                                # Update TQDM progress bar
+                                training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: ({best_eval})")
+
+                                # Log to wandb
+                                run.log({
+                                    "Learning Rate": opt.param_groups[0]['lr'],
+                                    "Cross-Entropy Loss": losses[0],
+                                    "Validation Set Loss": val_loss,
+                                })
+
+                    else:
+                        if (batch_index + 1) % self.config.log_interval == 0:
+                            # Evaluate on validation set
+                            val_loss = self.evaluate(model, **dataloader_args)
+                            if best_eval > val_loss:
+                                best_eval = val_loss
+                                timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
+                                checkpoint_state = {
+                                        'epoch': epoch_index,
+                                        'model_state_dict': model.state_dict(),
+                                        'optimizer_state_dict': opt.state_dict()
+                                        }
+                                torch.save(
+                                        checkpoint_state,
+                                        os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
+                                        )
+                            
+                            # Update TQDM progress bar
+                            training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: ({best_eval})")
+
+                            # Log to wandb
+                            run.log({
+                                "Learning Rate": opt.param_groups[0]['lr'],
+                                "Cross-Entropy Loss": losses[0],
+                                "Validation Set Loss": val_loss,
+                            })
 
         # > Close out run
         if self.distributed:
