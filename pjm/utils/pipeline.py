@@ -496,9 +496,10 @@ class Pipeline(object):
 
             # > Initialize TQDM progress bar
             if self.distributed:
-                # ( ! ) DGL Distributed DataLoader
+                # ( ! ) DGL Distributed DataLoader ( ONLY FOR MULTI-MODAL TRAINING )
                 # > We need to repeat the random partition every epoch to guarantee randomness
-                train_loader.set_epoch(epoch_index)
+                if self.config.multimodal:
+                    train_loader.set_epoch(epoch_index)
 
                 if rank == 0:
                     if all([l is None for l in losses]):
