@@ -490,6 +490,7 @@ class Pipeline(object):
         global_step = 0
         losses = (None, None)
         best_eval = float("inf")
+        timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
         for epoch_index in range(self.num_epochs):
             # > Initialize training data loader
             train_loader = self.training_loader(**dataloader_args)
@@ -555,13 +556,24 @@ class Pipeline(object):
                 # Skip Validation if unit test is enabled
                 if _unit_test_enabled(self.unit_test):
                     # > Only update TQDM progress bar and log to wandb
+                    if self.config.multimodal:
+                        losses[0] = losses[0] / model_args["contrastive_loss_weight"]
+                        losses[1] = losses[1] / model_args["cross_entropy_loss_weight"]
+                        run.log({
+                            "Learning Rate": opt.param_groups[0]['lr'],
+                            "Total Loss": sum(losses),
+                            "Contrastive Loss": losses[0],
+                            "Cross-Entropy Loss": losses[1],
+                        })
+                    else:
+                        run.log({
+                            "Learning Rate": opt.param_groups[0]['lr'],
+                            "Cross-Entropy Loss": losses[0],
+                        })
+                    
+                    # Update TQDM progress bar
                     training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: (NA)")
-                    run.log({
-                        "Learning Rate": opt.param_groups[0]['lr'],
-                        "Total Loss": sum(losses),
-                        "Contrastive Loss": losses[0],
-                        "Cross-Entropy Loss": losses[1],
-                    })
+
                 else:
                     # > Logging training and validation loss
                     if (self.distributed) and (self.config.multimodal):
@@ -571,7 +583,6 @@ class Pipeline(object):
                                 val_loss = self.evaluate(model, **dataloader_args)
                                 if best_eval > val_loss:
                                     best_eval = val_loss
-                                    timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
                                     checkpoint_state = {
                                             'epoch': epoch_index,
                                             'model_state_dict': model.state_dict(),
@@ -581,7 +592,11 @@ class Pipeline(object):
                                             checkpoint_state,
                                             os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
                                             )
-                                
+
+                                # Re-weight multi-modal losses
+                                losses[0] = losses[0] / model_args["contrastive_loss_weight"]
+                                losses[1] = losses[1] / model_args["cross_entropy_loss_weight"]
+
                                 # Update TQDM progress bar
                                 training_progress_bar.set_description(f"Rank {rank}: Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: ({best_eval})")
 
@@ -600,7 +615,6 @@ class Pipeline(object):
                             val_loss = self.evaluate(model, **dataloader_args)
                             if best_eval > val_loss:
                                 best_eval = val_loss
-                                timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
                                 checkpoint_state = {
                                         'epoch': epoch_index,
                                         'model_state_dict': model.state_dict(),
@@ -610,6 +624,10 @@ class Pipeline(object):
                                         checkpoint_state,
                                         os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
                                         )
+                            
+                            # Re-weight multi-modal losses
+                            losses[0] = losses[0] / model_args["contrastive_loss_weight"]
+                            losses[1] = losses[1] / model_args["cross_entropy_loss_weight"]
 
                             # Update TQDM progress bar
                             training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: ({best_eval})")
@@ -630,7 +648,6 @@ class Pipeline(object):
                                 val_loss = self.evaluate(model, **dataloader_args)
                                 if best_eval > val_loss:
                                     best_eval = val_loss
-                                    timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
                                     checkpoint_state = {
                                             'epoch': epoch_index,
                                             'model_state_dict': model.state_dict(),
@@ -657,7 +674,6 @@ class Pipeline(object):
                             val_loss = self.evaluate(model, **dataloader_args)
                             if best_eval > val_loss:
                                 best_eval = val_loss
-                                timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
                                 checkpoint_state = {
                                         'epoch': epoch_index,
                                         'model_state_dict': model.state_dict(),

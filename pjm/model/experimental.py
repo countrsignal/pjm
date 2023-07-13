@@ -346,12 +346,15 @@ class CoCa(nn.Module):
     # > generative loss
     logits = rearrange(logits, 'b n c -> b c n')
     cross_entropy_loss = ce(logits, decoder_labels, ignore_index=self.pad_idx)
-    cross_entropy_loss = cross_entropy_loss * self.cross_entropy_loss_weight
+    if self.training:
+      cross_entropy_loss = cross_entropy_loss * self.cross_entropy_loss_weight
     # > contrastive loss
     sim = einsum('i d, j d -> i j', seq_embs, strc_embs)
     sim = sim * self.temperature['temperature'].exp()
     contrastive_loss = InfoNCE_loss(sim)
-    contrastive_loss = contrastive_loss * self.contrastive_loss_weight
+    if self.training:
+      contrastive_loss = contrastive_loss * self.contrastive_loss_weight
+    
     total_loss = cross_entropy_loss + contrastive_loss
 
     return contrastive_loss, cross_entropy_loss, total_loss
