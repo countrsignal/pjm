@@ -556,7 +556,17 @@ class Pipeline(object):
                 # Skip Validation if unit test is enabled
                 if _unit_test_enabled(self.unit_test):
                     # > Only update TQDM progress bar and log to wandb
-                    if self.config.multimodal:
+                    if (self.distributed) and (self.config.multimodal):
+                        if rank == 0:
+                            losses[0] = losses[0] / model_args["contrastive_loss_weight"]
+                            losses[1] = losses[1] / model_args["cross_entropy_loss_weight"]
+                            run.log({
+                                "Learning Rate": opt.param_groups[0]['lr'],
+                                "Total Loss": sum(losses),
+                                "Contrastive Loss": losses[0],
+                                "Cross-Entropy Loss": losses[1],
+                            })
+                    elif (not self.distributed) and (self.config.multimodal):
                         losses[0] = losses[0] / model_args["contrastive_loss_weight"]
                         losses[1] = losses[1] / model_args["cross_entropy_loss_weight"]
                         run.log({
@@ -565,6 +575,12 @@ class Pipeline(object):
                             "Contrastive Loss": losses[0],
                             "Cross-Entropy Loss": losses[1],
                         })
+                    if (self.distributed) and (not self.config.multimodal):
+                        if rank == 0:
+                            run.log({
+                                "Learning Rate": opt.param_groups[0]['lr'],
+                                "Cross-Entropy Loss": losses[0],
+                            })
                     else:
                         run.log({
                             "Learning Rate": opt.param_groups[0]['lr'],
