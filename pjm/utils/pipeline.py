@@ -575,7 +575,7 @@ class Pipeline(object):
                             "Contrastive Loss": losses[0],
                             "Cross-Entropy Loss": losses[1],
                         })
-                    if (self.distributed) and (not self.config.multimodal):
+                    elif (self.distributed) and (not self.config.multimodal):
                         if rank == 0:
                             run.log({
                                 "Learning Rate": opt.param_groups[0]['lr'],
