@@ -558,6 +558,7 @@ class Pipeline(object):
                     # > Only update TQDM progress bar and log to wandb
                     if (self.distributed) and (self.config.multimodal):
                         if rank == 0:
+                            # W&B logging
                             losses[0] = losses[0] / model_args["contrastive_loss_weight"]
                             losses[1] = losses[1] / model_args["cross_entropy_loss_weight"]
                             run.log({
@@ -566,8 +567,11 @@ class Pipeline(object):
                                 "Contrastive Loss": losses[0],
                                 "Cross-Entropy Loss": losses[1],
                             })
+                            # TQDM logging
+                            training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: (NA)")
 
                     elif (not self.distributed) and (self.config.multimodal):
+                        # W&B logging
                         losses[0] = losses[0] / model_args["contrastive_loss_weight"]
                         losses[1] = losses[1] / model_args["cross_entropy_loss_weight"]
                         run.log({
@@ -576,22 +580,27 @@ class Pipeline(object):
                             "Contrastive Loss": losses[0],
                             "Cross-Entropy Loss": losses[1],
                         })
+                        # TQDM logging
+                        training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: (NA)")
 
                     elif (self.distributed) and (not self.config.multimodal):
                         if rank == 0:
+                            # W&B logging
                             run.log({
                                 "Learning Rate": opt.param_groups[0]['lr'],
                                 "Cross-Entropy Loss": losses[0],
                             })
+                            # TQDM logging
+                            training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: (NA)")
 
                     else:
+                        # W&B logging
                         run.log({
                             "Learning Rate": opt.param_groups[0]['lr'],
                             "Cross-Entropy Loss": losses[0],
                         })
-                    
-                    # Update TQDM progress bar
-                    training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: (NA)")
+                        # TQDM logging
+                        training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: (NA)")
 
                 else:
                     # > Logging training and validation loss
