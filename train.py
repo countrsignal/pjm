@@ -37,6 +37,8 @@ def parse():
     parser.add_argument("--model_config_path", type=str, help="Set path to model config json.")
     parser.add_argument("--log_interval", type=int,
                         default=5, help="Set logging frequency.")
+    parser.add_argument("--val_interval", type=int,
+                        default=5, help="Set validation set evaluation frequency.")
     parser.add_argument("--tags", nargs="+", help="W&B run tags.")
     parser.add_argument("--seed", type=int, help="Set random seed.")
     return parser.parse_args()

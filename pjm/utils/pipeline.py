@@ -608,18 +608,21 @@ class Pipeline(object):
                         if rank == 0:
                             if global_step % self.config.log_interval == 0:
                                 # Evaluate on validation set
-                                val_loss = self.evaluate(model, **dataloader_args)
-                                if best_eval > val_loss:
-                                    best_eval = val_loss
-                                    checkpoint_state = {
-                                            'epoch': epoch_index,
-                                            'model_state_dict': model.state_dict(),
-                                            'optimizer_state_dict': opt.state_dict()
-                                            }
-                                    torch.save(
-                                            checkpoint_state,
-                                            os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
-                                            )
+                                if global_step % self.config.val_interval == 0:
+                                    val_loss = self.evaluate(model, **dataloader_args)
+                                    run.log({"Validation Set Loss": val_loss})
+
+                                    if best_eval > val_loss:
+                                        best_eval = val_loss
+                                        checkpoint_state = {
+                                                'epoch': epoch_index,
+                                                'model_state_dict': model.state_dict(),
+                                                'optimizer_state_dict': opt.state_dict()
+                                                }
+                                        torch.save(
+                                                checkpoint_state,
+                                                os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
+                                                )
 
                                 # Re-weight multi-modal losses
                                 losses[0] = losses[0] / model_args["contrastive_loss_weight"]
@@ -634,24 +637,26 @@ class Pipeline(object):
                                     "Total Loss": sum(losses),
                                     "Contrastive Loss": losses[0],
                                     "Cross-Entropy Loss": losses[1],
-                                    "Validation Set Loss": val_loss,
                                 })
 
                     elif (not self.distributed) and (self.config.multimodal):
                         if global_step % self.config.log_interval == 0:
                             # Evaluate on validation set
-                            val_loss = self.evaluate(model, **dataloader_args)
-                            if best_eval > val_loss:
-                                best_eval = val_loss
-                                checkpoint_state = {
-                                        'epoch': epoch_index,
-                                        'model_state_dict': model.state_dict(),
-                                        'optimizer_state_dict': opt.state_dict()
-                                        }
-                                torch.save(
-                                        checkpoint_state,
-                                        os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
-                                        )
+                            if global_step % self.config.val_interval == 0:
+                                val_loss = self.evaluate(model, **dataloader_args)
+                                run.log({"Validation Set Loss": val_loss})
+
+                                if best_eval > val_loss:
+                                    best_eval = val_loss
+                                    checkpoint_state = {
+                                            'epoch': epoch_index,
+                                            'model_state_dict': model.state_dict(),
+                                            'optimizer_state_dict': opt.state_dict()
+                                            }
+                                    torch.save(
+                                            checkpoint_state,
+                                            os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
+                                            )
                             
                             # Re-weight multi-modal losses
                             losses[0] = losses[0] / model_args["contrastive_loss_weight"]
@@ -666,14 +671,44 @@ class Pipeline(object):
                                 "Total Loss": sum(losses),
                                 "Contrastive Loss": losses[0],
                                 "Cross-Entropy Loss": losses[1],
-                                "Validation Set Loss": val_loss,
                             })
 
                     elif (self.distributed) and (not self.config.multimodal):
                         if rank == 0:
                             if global_step % self.config.log_interval == 0:
                                 # Evaluate on validation set
+                                if global_step % self.config.val_interval == 0:
+                                    val_loss = self.evaluate(model, **dataloader_args)
+                                    run.log({"Validation Set Loss": val_loss})
+
+                                    if best_eval > val_loss:
+                                        best_eval = val_loss
+                                        checkpoint_state = {
+                                                'epoch': epoch_index,
+                                                'model_state_dict': model.state_dict(),
+                                                'optimizer_state_dict': opt.state_dict()
+                                                }
+                                        torch.save(
+                                                checkpoint_state,
+                                                os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
+                                                )
+
+                                # Update TQDM progress bar
+                                training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: ({best_eval})")
+
+                                # Log to wandb
+                                run.log({
+                                    "Learning Rate": opt.param_groups[0]['lr'],
+                                    "Cross-Entropy Loss": losses[0],
+                                })
+
+                    else:
+                        if global_step % self.config.log_interval == 0:
+                            # Evaluate on validation set
+                            if global_step % self.config.val_interval == 0:
                                 val_loss = self.evaluate(model, **dataloader_args)
+                                run.log({"Validation Set Loss": val_loss})
+
                                 if best_eval > val_loss:
                                     best_eval = val_loss
                                     checkpoint_state = {
@@ -685,32 +720,6 @@ class Pipeline(object):
                                             checkpoint_state,
                                             os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
                                             )
-
-                                # Update TQDM progress bar
-                                training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: ({best_eval})")
-
-                                # Log to wandb
-                                run.log({
-                                    "Learning Rate": opt.param_groups[0]['lr'],
-                                    "Cross-Entropy Loss": losses[0],
-                                    "Validation Set Loss": val_loss,
-                                })
-
-                    else:
-                        if global_step % self.config.log_interval == 0:
-                            # Evaluate on validation set
-                            val_loss = self.evaluate(model, **dataloader_args)
-                            if best_eval > val_loss:
-                                best_eval = val_loss
-                                checkpoint_state = {
-                                        'epoch': epoch_index,
-                                        'model_state_dict': model.state_dict(),
-                                        'optimizer_state_dict': opt.state_dict()
-                                        }
-                                torch.save(
-                                        checkpoint_state,
-                                        os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
-                                        )
                             
                             # Update TQDM progress bar
                             training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: ({best_eval})")
@@ -719,7 +728,6 @@ class Pipeline(object):
                             run.log({
                                 "Learning Rate": opt.param_groups[0]['lr'],
                                 "Cross-Entropy Loss": losses[0],
-                                "Validation Set Loss": val_loss,
                             })
 
         # > Close out run
