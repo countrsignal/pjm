@@ -268,9 +268,9 @@ class Pipeline(object):
             scheduler.step()
 
         if self.config.multimodal:
-            return (cont_loss.detach().cpu().item(), ce_loss.detach().cpu().item())
+            return [cont_loss.detach().cpu().item(), ce_loss.detach().cpu().item()]
         else:
-            return (ce_loss.detach().cpu().item(),)
+            return [ce_loss.detach().cpu().item(),]
 
     def evaluate(self, model, **kwargs):
 
@@ -488,7 +488,7 @@ class Pipeline(object):
 
         # ( ! ) Model Training
         global_step = 0
-        losses = (None, None)
+        losses = [None, None]
         best_eval = float("inf")
         timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
         for epoch_index in range(self.num_epochs):
