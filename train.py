@@ -27,6 +27,8 @@ def parse():
                         action="store_true", help="Overfit unit test.")
     parser.add_argument("-s", "--early_stopping",
                         action="store_true", help="Overfit uni test.")
+    parser.add_argument("--weight_decay", action="store_true",
+                        help="Use AdamW instead of regular Adam.")
     parser.add_argument("--multimodal", action="store_true",
                         help="Use multimodal or unimodal architecture.")
     parser.add_argument("--bfloat16", action="store_true",

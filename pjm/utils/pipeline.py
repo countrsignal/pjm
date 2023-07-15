@@ -391,21 +391,40 @@ class Pipeline(object):
 
             # > Optimizer
             if self.config.multimodal:
-                opt = torch.optim.Adam(
-                    model.parameters(),
-                    lr=model_args["lr"],
-                    betas=(0.9, 0.98),
-                    eps=1e-9,
-                )
+                if self.config.weight_decay:
+                    opt = torch.optim.AdamW(
+                        model.parameters(),
+                        lr=model_args["lr"],
+                        betas=(0.9, 0.98),
+                        eps=1e-9,
+                        weight_decay=model_args["weight_decay"],
+                        )
+                else:
+                    opt = torch.optim.Adam(
+                        model.parameters(),
+                        lr=model_args["lr"],
+                        betas=(0.9, 0.98),
+                        eps=1e-9,
+                    )
+
                 lr_scheduler = None
             else:
-                opt = torch.optim.AdamW(
-                    model.parameters(),
-                    lr=model_args["lr"],
-                    betas=(0.9, 0.98),
-                    eps=1e-9,
-                    weight_decay=model_args["weight_decay"],
+                if self.config.weight_decay:
+                    opt = torch.optim.AdamW(
+                        model.parameters(),
+                        lr=model_args["lr"],
+                        betas=(0.9, 0.98),
+                        eps=1e-9,
+                        weight_decay=model_args["weight_decay"],
+                        )
+                else:
+                    opt = torch.optim.Adam(
+                        model.parameters(),
+                        lr=model_args["lr"],
+                        betas=(0.9, 0.98),
+                        eps=1e-9,
                     )
+
                 if model_args["lr_scheduler"]:
                     lr_scheduler = WarmupLinearSchedule(optimizer=opt, **model_args["lr_scheduler"])
                 else:
@@ -466,21 +485,40 @@ class Pipeline(object):
             
             # > Optimizer
             if self.config.multimodal:
-                opt = torch.optim.Adam(
-                    model.parameters(),
-                    lr=model_args["lr"],
-                    betas=(0.9, 0.98),
-                    eps=1e-9,
-                )
+                if self.config.weight_decay:
+                    opt = torch.optim.AdamW(
+                        model.parameters(),
+                        lr=model_args["lr"],
+                        betas=(0.9, 0.98),
+                        eps=1e-9,
+                        weight_decay=model_args["weight_decay"],
+                        )
+                else:
+                    opt = torch.optim.Adam(
+                        model.parameters(),
+                        lr=model_args["lr"],
+                        betas=(0.9, 0.98),
+                        eps=1e-9,
+                    )
+
                 lr_scheduler = None
             else:
-                opt = torch.optim.AdamW(
-                    model.parameters(),
-                    lr=model_args["lr"],
-                    betas=(0.9, 0.98),
-                    eps=1e-9,
-                    weight_decay=model_args["weight_decay"],
+                if self.config.weight_decay:
+                    opt = torch.optim.AdamW(
+                        model.parameters(),
+                        lr=model_args["lr"],
+                        betas=(0.9, 0.98),
+                        eps=1e-9,
+                        weight_decay=model_args["weight_decay"],
+                        )
+                else:
+                    opt = torch.optim.Adam(
+                        model.parameters(),
+                        lr=model_args["lr"],
+                        betas=(0.9, 0.98),
+                        eps=1e-9,
                     )
+
                 if model_args["lr_scheduler"]:
                     lr_scheduler = WarmupLinearSchedule(optimizer=opt, **model_args["lr_scheduler"])
                 else:
