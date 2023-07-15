@@ -262,7 +262,7 @@ def main():
                         }
                         torch.save(
                                 checkpoint_state,
-                                os.path.join(args.model_chkpt_path, f'model_chkpt_epoch{epoch + 1}.pth')
+                                os.path.join(args.model_chkpt_path, 'model_chkpt_simple_train.pth')
                         )
 
 
