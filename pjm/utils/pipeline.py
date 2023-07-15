@@ -568,7 +568,7 @@ class Pipeline(object):
                                 "Cross-Entropy Loss": losses[1],
                             })
                             # TQDM logging
-                            training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: (NA)")
+                            training_progress_bar.set_description(f"Rank {rank}: Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: (NA)")
 
                     elif (not self.distributed) and (self.config.multimodal):
                         # W&B logging
@@ -591,7 +591,7 @@ class Pipeline(object):
                                 "Cross-Entropy Loss": losses[0],
                             })
                             # TQDM logging
-                            training_progress_bar.set_description(f"Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: (NA)")
+                            training_progress_bar.set_description(f"Rank {rank}: Epoch {epoch_index + 1}, Loss ({sum(losses)}), Best Val Loss: (NA)")
 
                     else:
                         # W&B logging
