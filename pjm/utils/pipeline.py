@@ -160,7 +160,10 @@ class Pipeline(object):
         # << ! >> Unit test hook
         if _unit_test_enabled(self.unit_test):
             self.unit_test.msg("Dataset override triggered")
-            train_set = self.unit_test.get_unit_test_dataset(dataset=train_set)
+            train_set = self.unit_test.get_unit_test_dataset(
+                dataset=train_set,
+                num_samples=self.config.batch_size,
+                )
         # << ! >> Early stop hook
         if _early_stop_enabled(self.early_stop):
             self.early_stop.msg("Dataset override triggered")

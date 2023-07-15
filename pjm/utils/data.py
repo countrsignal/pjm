@@ -95,6 +95,7 @@ class AF2SCN(object):
         self.manifest = json.load((self.path / 'manifest.json').open('r'))[self.split]
 
         # > Filter out large proteins
+        self.max_len = max_len
         if max_len is not None:
             self.manifest = {k: v for k, v in self.manifest.items() if len(v['sequence']) <= max_len}
         

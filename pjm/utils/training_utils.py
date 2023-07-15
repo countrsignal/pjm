@@ -106,19 +106,20 @@ class Overfit(UnitTest):
         super().__init__()
 
     @staticmethod
-    def get_unit_test_dataset(dataset: AF2SCN) -> AF2SCN:
+    def get_unit_test_dataset(dataset: AF2SCN, num_samples: int) -> AF2SCN:
         new_manifest = {}
         af2_count, scn_count = 0, 0
+        max_per_data_source = num_samples // 2
         for k, v in dataset.manifest.items():
-            if len(v['sequence']) <= 125:
+            if len(v['sequence']) <= dataset.max_len:
                 if k.split('-')[0] == 'AF':
-                    if af2_count < 32:
+                    if af2_count < max_per_data_source:
                         new_manifest[k] = v
                         af2_count += 1
                     else:
                         continue
                 else:
-                    if scn_count < 32:
+                    if scn_count < max_per_data_source:
                         new_manifest[k] = v
                         scn_count += 1
                     else:
