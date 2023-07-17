@@ -45,19 +45,9 @@ class Batch(object):
         # Route data to device
         sequences = self.seqs.to(device)
         graphs = graphs.to(device)
-        # > Convert to FP16
-        if torch.is_autocast_enabled():
-            node_features = (
-                node_features[0].half().to(device),
-                node_features[1].half().to(device)
-            )
-            edge_features = (
-                edge_features[0].half().to(device),
-                edge_features[1].half().to(device)
-            )
-        else:
-            node_features = (node_features[0].to(device), node_features[1].to(device))
-            edge_features = (edge_features[0].to(device), edge_features[1].to(device))
+
+        node_features = (node_features[0].to(device), node_features[1].to(device))
+        edge_features = (edge_features[0].to(device), edge_features[1].to(device))
 
         return sequences, graphs, node_features, edge_features
 
