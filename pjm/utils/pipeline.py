@@ -225,27 +225,28 @@ class Pipeline(object):
                 device = model.encoder_parallel_device
             else:
                 device = 'cuda:0'
-        
+
+        # Zero gradients        
         optimizer.zero_grad()
+
+        # Move data and model to device(s)
+        if self.config.multimodal:
+            sequences, *structures = batch.process_data(device)
+        else:
+            sequences = batch.seqs.to(device)
+
+        if (epoch_index == 0) and (batch_index == 0):
+            if self.distributed:
+                model.module.dispatch_params()
+            else:
+                if model.encoder_parallel_device:
+                    model.dispatch_params()
+                else:
+                    model = model.to(device)
 
         # Forward pass with autocast
         # > BFLOAT16 does not require GradScaler!
         with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=self.config.bfloat16):
-            
-            # >> Move data (and model) to device(s)
-            if self.config.multimodal:
-                sequences, *structures = batch.process_data(device)
-            else:
-                sequences = batch.seqs.to(device)
-
-            if (epoch_index == 0) and (batch_index == 0):
-                if self.distributed:
-                    model.module.dispatch_params()
-                else:
-                    if model.encoder_parallel_device:
-                        model.dispatch_params()
-                    else:
-                        model = model.to(device)
 
             # >> Forward pass
             if self.config.multimodal:
