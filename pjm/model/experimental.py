@@ -183,7 +183,7 @@ class CoCa(nn.Module):
 
     with graph.local_scope():
       graph.ndata['h'] = node_feats
-      graph_feats = dgl.sum_nodes(graph, 'h')
+      graph_feats = dgl.mean_nodes(graph, 'h')
 
     # Reformat node embeddings
     with graph.local_scope():
@@ -320,7 +320,7 @@ class CoCa(nn.Module):
     )
 
     if return_embeddings:
-      return seq_embs, strc_embs
+      return (seq_embs, seq_tokens), (strc_embs, strc_tokens)
 
     # > Model Parallelism (Decoder on separate device)
     if self.decoder_parallel_device is not None:

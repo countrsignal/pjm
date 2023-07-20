@@ -109,12 +109,12 @@ def main():
 	dataset_path=args.dataset_path,
 	_filter_by_plddt_coverage=None
     )
-    val_ds = AF2SCN(
-	"val",
-	max_len=args.max_len,
-	dataset_path=args.dataset_path,
-	_filter_by_plddt_coverage=None
-    )
+    # val_ds = AF2SCN(
+	# "val",
+	# max_len=args.max_len,
+	# dataset_path=args.dataset_path,
+	# _filter_by_plddt_coverage=None
+    # )
 
     alphabet = Alphabet(
 	prepend_toks = ("<sos>", "<eos>", "<unk>"),
@@ -131,13 +131,13 @@ def main():
 	collate_fn=collate_fn,
 	shuffle=True,
     )
-    val_loader = DataLoader(
-    val_ds,
-    batch_size=args.batch_size,
-    num_workers=args.num_workers,
-    collate_fn=collate_fn,
-    shuffle=False,
-    )
+    # val_loader = DataLoader(
+    # val_ds,
+    # batch_size=args.batch_size,
+    # num_workers=args.num_workers,
+    # collate_fn=collate_fn,
+    # shuffle=False,
+    # )
 
     # Create a single batch for forward pass unit test
     if (args.fwd_test):
@@ -162,6 +162,7 @@ def main():
     # nan_watcher = 0
     # prev_batch_pdb_ids = None
     best_val_loss = float("inf")
+    total = torch.Tensor([float("inf")])
     with wandb.init(dir=".", project="jessy", tags=args.tags):
         #wandb.watch(model, log_freq=args.log_interval)
         
@@ -170,14 +171,14 @@ def main():
                 progress_bar = tqdm(
                     enumerate([batch]),
                     total=1,
-                    desc=f"Epoch {epoch + 1}: Loss (NA)",
+                    desc=f"Epoch {epoch + 1}: Loss ({total.item()})",
                     mininterval=args.log_interval
                 )
             else:                
                 progress_bar = tqdm(
                     enumerate(train_loader),
                     total=len(train_loader),
-                    desc=f"Epoch {epoch + 1}: Loss (NA)",
+                    desc=f"Epoch {epoch + 1}: Loss ({total.item()})",
                     mininterval=args.log_interval
                 )
 
@@ -227,17 +228,15 @@ def main():
                 else:
                     if (args.bf16):
                         with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=True):
-                            ct_loss, ce_loss = model(
+                            ct_loss, ce_loss, total = model(
                                 sequences,
                                 structures,
                             )
-                            total = ct_loss + ce_loss
                     else:
-                        ct_loss, ce_loss = model(
+                        ct_loss, ce_loss, total = model(
                             sequences,
                             structures,
                         )
-                        total = ct_loss + ce_loss
 
                     total.backward()
 
@@ -251,19 +250,36 @@ def main():
                     "Total": total.item()
                 })
 
-                if (batch_index + 1) % args.log_interval == 0:
-                    avg_val_loss = validate(model, val_loader)
-                    progress_bar.set_description(f"Epoch {epoch + 1}: Train Loss ({ce_loss + ct_loss}), Val Loss ({avg_val_loss})")
+                log_step = epoch + 1 if args.fwd_test else batch_index + 1
+                if log_step % args.log_interval == 0:
+                    with torch.no_grad():
+                        if (args.bf16):
+                            with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=True):
+                                seq_embs, strc_embs = model(
+                                    sequences,
+                                    structures,
+                                    return_embeddings=True,
+                                )
+                        else:
+                            seq_embs, strc_embs = model(
+                                sequences,
+                                structures,
+                                return_embeddings=True,
+                            )
+                    
+                    print(strc_embs[1][0, :5, :5])
+                    # avg_val_loss = validate(model, val_loader)
+                    # progress_bar.set_description(f"Epoch {epoch + 1}: Train Loss ({total.item()}), Val Loss ({avg_val_loss})")
 
-                    if best_val_loss > avg_val_loss:
-                        best_val_loss = avg_val_loss
-                        checkpoint_state = {
-                                'model_state_dict': model.state_dict(),
-                        }
-                        torch.save(
-                                checkpoint_state,
-                                os.path.join(args.model_chkpt_path, 'model_chkpt_simple_train.pth')
-                        )
+                    # if best_val_loss > avg_val_loss:
+                    #     best_val_loss = avg_val_loss
+                    #     checkpoint_state = {
+                    #             'model_state_dict': model.state_dict(),
+                    #     }
+                    #     torch.save(
+                    #             checkpoint_state,
+                    #             os.path.join(args.model_chkpt_path, 'model_chkpt_simple_train.pth')
+                    #     )
 
 
 if __name__ == "__main__":
