@@ -528,7 +528,9 @@ class Pipeline(object):
                 else:
                     lr_scheduler = None
 
-        # ( ! ) Model Training
+        ############################
+        #       Training Loop
+        ############################
         global_step = 0
         losses = [None, None]
         best_eval = float("inf")
