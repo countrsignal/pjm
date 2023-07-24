@@ -158,12 +158,20 @@ def main():
     model.dispatch_params()
 
     opt = torch.optim.Adam(model.parameters(), lr=args.learning_rate, betas=(0.9, 0.98), eps=1e-9)
+    # opt = torch.optim.AdamW(
+    #     model.parameters(),
+    #     lr=args.learning_rate,
+    #     betas=(0.9, 0.98),
+    #     eps=1e-9,
+    #     weight_decay=model_args["weight_decay"]
+    # )
 
     # nan_watcher = 0
     # prev_batch_pdb_ids = None
+    log_step = 0
     best_val_loss = float("inf")
     total = torch.Tensor([float("inf")])
-    with wandb.init(dir=".", project="jessy", tags=args.tags):
+    with wandb.init(dir=".", project="joint embeddings", name="simple train", tags=args.tags):
         #wandb.watch(model, log_freq=args.log_interval)
         
         for epoch in range(args.num_epochs):
@@ -241,33 +249,31 @@ def main():
                     total.backward()
 
                 opt.step()
-                
-                ce_loss = ce_loss.detach().item()
-                ct_loss = ct_loss.detach().item()
-                wandb.log({
-                    "Masked Cross-Entropy": ce_loss,
-                    "Contrastive": ct_loss,
-                    "Total": total.item()
-                })
 
-                log_step = epoch + 1 if args.fwd_test else batch_index + 1
+                log_step += 1
                 if log_step % args.log_interval == 0:
-                    with torch.no_grad():
-                        if (args.bf16):
-                            with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=True):
-                                seq_embs, strc_embs = model(
-                                    sequences,
-                                    structures,
-                                    return_embeddings=True,
-                                )
-                        else:
-                            seq_embs, strc_embs = model(
-                                sequences,
-                                structures,
-                                return_embeddings=True,
-                            )
+                    ce_loss = ce_loss.detach().item()
+                    ct_loss = ct_loss.detach().item()
+                    wandb.log({
+                        "Cross-Entropy Loss": ce_loss,
+                        "Contrastive Loss": ct_loss,
+                        "Total Loss": total.item()
+                    })
+                    # with torch.no_grad():
+                    #     if (args.bf16):
+                    #         with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=True):
+                    #             seq_embs, strc_embs = model(
+                    #                 sequences,
+                    #                 structures,
+                    #                 return_embeddings=True,
+                    #             )
+                    #     else:
+                    #         seq_embs, strc_embs = model(
+                    #             sequences,
+                    #             structures,
+                    #             return_embeddings=True,
+                    #         )
                     
-                    print(strc_embs[1][0, :5, :5])
                     # avg_val_loss = validate(model, val_loader)
                     # progress_bar.set_description(f"Epoch {epoch + 1}: Train Loss ({total.item()}), Val Loss ({avg_val_loss})")
 
