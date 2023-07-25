@@ -18,7 +18,7 @@ class GVPGNN(nn.Module):
         super(GVPGNN, self).__init__()
         self.n_proj = GVPConv(in_dims=node_in_dims, out_dims=node_out_dims, edge_dims=edge_in_dims, n_layers=2)
         self.gvp_convs = nn.ModuleList(
-            GVPConvLayer(node_dims=node_out_dims, edge_dims=edge_in_dims, n_edge_gvps=num_edge_gvps, **kwargs) for _ in range(num_mp_layers)
+            GVPConvLayer(node_dims=node_out_dims, edge_dims=edge_in_dims, n_edge_gvps=num_edge_gvps, **kwargs) for _ in range(num_gvp_convs)
         )
         node_out_dims = node_out_dims[0] + node_out_dims[1] * 3
         self.embed_gvp_output = nn.Linear(node_out_dims, final_proj_dim)

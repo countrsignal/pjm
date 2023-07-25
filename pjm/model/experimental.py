@@ -43,7 +43,7 @@ def standard_structure_module(
            node_out_dims,
            edge_in_dims,
            num_edge_gvps,
-           num_mp_layers,
+           num_gvp_convs,
            final_proj_dim,
            **kwargs
        )
