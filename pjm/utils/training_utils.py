@@ -61,7 +61,7 @@ def load_jem(
         "final_proj_dim": model_args["embedding_dim"],
         "num_transformer_blocks": model_args["num_structure_transformer_blocks"],
         "transformer_input_dim": model_args["embedding_dim"],
-        "transformer_block_depth": model_args["tf_depth"],
+        "transformer_block_depth": model_args["transformer_block_depth"],
         "num_attns_heads": model_args["num_attns_heads"],
         "attn_head_dim": model_args["attn_head_dim"],
         "dropout": model_args["dropout"],
