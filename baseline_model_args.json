@@ -1,1 +1,1 @@
-{"depth": 1, "num_layers": 12, "heads": 12, "dim_heads": 768, "dropout": 0.1, "lr": 0.0005, "weight_decay": 0.01, "lr_scheduler": {}}
+{"depth": 1, "num_transformer_blocks": 12, "heads": 12, "head_dim": 768, "dropout": 0.1, "lr": 0.0005, "weight_decay": 0.01, "lr_scheduler": {}}

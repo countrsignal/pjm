@@ -10,7 +10,7 @@ import torch
 import wandb
 from pytorch_lightning import seed_everything
 
-from .training_utils import UnitTest, _setup_logger, load_model
+from .training_utils import UnitTest, _setup_logger, load_jem
 from ..model.baseline import BaselineModel
 from .data import  Collator, AF2SCN
 from .tokenizer import Alphabet
@@ -375,16 +375,16 @@ class Pipeline(object):
             else:
                 # << ! >> Multi-modal or Uni-modal model
                 if self.config.multimodal:
-                    model = load_model((dev0, dev1), self.alphabet, model_args)
+                    model = load_jem((dev0, dev1), self.alphabet, model_args)
                 else:
                     transformer_config = {
                         "depth": model_args["depth"],
                         "heads": model_args["heads"],
-                        "dim_head": model_args["dim_heads"],
+                        "head_dim": model_args["head_dim"],
                         "dropout": model_args["dropout"],
                     }
                     model = BaselineModel(
-                        dim=model_args["dim_heads"],
+                        dim=model_args["head_dim"],
                         alphabet=self.alphabet,
                         num_layers=model_args["num_layers"],
                         encoder_parallel_device=dev0,
@@ -470,16 +470,16 @@ class Pipeline(object):
             else:
                # << ! >> Multi-modal or Uni-modal model
                 if self.config.multimodal:
-                    model = load_model((dev0, dev1), self.alphabet, model_args)
+                    model = load_jem((dev0, dev1), self.alphabet, model_args)
                 else:
                     transformer_config = {
                         "depth": model_args["depth"],
                         "heads": model_args["heads"],
-                        "dim_head": model_args["dim_heads"],
+                        "head_dim": model_args["head_dim"],
                         "dropout": model_args["dropout"],
                     }
                     model = BaselineModel(
-                        dim=model_args["dim"],
+                        dim=model_args["head_dim"],
                         alphabet=self.alphabet,
                         num_layers=model_args["num_layers"],
                         encoder_parallel_device=dev0,

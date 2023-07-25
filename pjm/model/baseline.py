@@ -25,7 +25,7 @@ class BaselineModel(nn.Module):
         self,
         dim: int,
         alphabet: Alphabet,
-        num_layers: int,
+        num_transformer_blocks: int,
         encoder_parallel_device: Optional[str] = None,
         decoder_parallel_device: Optional[str] = None,
         **kwargs
@@ -49,11 +49,11 @@ class BaselineModel(nn.Module):
             padding_idx=self.pad_idx
         )
         self.encoder = nn.ModuleList([
-            Transformer(dim, **kwargs) for _ in range(num_layers)
+            Transformer(dim, **kwargs) for _ in range(num_transformer_blocks)
         ])
         self.decoder = BaselineDecoder(
             dim=dim,
-            num_layers=num_layers,
+            num_layers=num_transformer_blocks,
             alphabet_size=len(alphabet.all_toks),
             **kwargs
         )

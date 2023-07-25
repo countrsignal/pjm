@@ -100,14 +100,14 @@ class SwiGLU(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, dim, heads = 8, dim_head = 64, dropout = 0.1):
+    def __init__(self, dim, heads = 8, head_dim = 64, dropout = 0.1):
         super().__init__()
-        inner_dim = dim_head * heads
-        project_out = not (heads == 1 and dim_head == dim)
+        inner_dim = head_dim * heads
+        project_out = not (heads == 1 and head_dim == dim)
         
         self.heads = heads
-        self.scale = dim_head ** -0.5
-        self.rotary_emb = RotaryEmbedding(dim_head)
+        self.scale = head_dim ** -0.5
+        self.rotary_emb = RotaryEmbedding(head_dim)
 
         self.to_qkv = nn.Linear(dim, inner_dim * 3, bias = False)
 
@@ -174,13 +174,13 @@ class Attention(nn.Module):
 
 
 class CrossAttention(nn.Module):
-    def __init__(self, dim, heads = 8, dim_head = 64, dropout = 0.1):
+    def __init__(self, dim, heads = 8, head_dim = 64, dropout = 0.1):
         super().__init__()
-        inner_dim = dim_head *  heads
-        project_out = not (heads == 1 and dim_head == dim)
+        inner_dim = head_dim *  heads
+        project_out = not (heads == 1 and head_dim == dim)
 
         self.heads = heads
-        self.scale = dim_head ** -0.5
+        self.scale = head_dim ** -0.5
 
         self.to_kv = nn.Linear(dim, inner_dim * 2, bias=False)
         self.to_q = nn.Linear(dim, inner_dim, bias = False)
@@ -219,7 +219,7 @@ class CrossAttention(nn.Module):
 
 
 class Transformer(nn.Module):
-  def __init__(self, dim, depth, heads, dim_head, dropout = 0.1):
+  def __init__(self, dim, depth, heads, head_dim, dropout = 0.1):
     super().__init__()
     self.layers = nn.ModuleList([])
     for _ in range(depth):
@@ -228,7 +228,7 @@ class Transformer(nn.Module):
               Attention(
                   dim,
                   heads = heads,
-                  dim_head = dim_head,
+                  head_dim = head_dim,
                   dropout = dropout,
                   )
               )

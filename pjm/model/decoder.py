@@ -33,15 +33,15 @@ class CXDecoderBlock(nn.Module):
       dim,
       depth,
       heads,
-      dim_head,
+      head_dim,
       dropout
       ):
     super(CXDecoderBlock, self).__init__()
     self.layers = nn.ModuleList([
-            Transformer(dim, depth, heads, dim_head, dropout),
-            Transformer(dim, depth, heads, dim_head, dropout),
-            Residual(CrossAttention(dim, heads, dim_head, dropout)),
-            Residual(CrossAttention(dim, heads, dim_head, dropout))
+            Transformer(dim, depth, heads, head_dim, dropout),
+            Transformer(dim, depth, heads, head_dim, dropout),
+            Residual(CrossAttention(dim, heads, head_dim, dropout)),
+            Residual(CrossAttention(dim, heads, head_dim, dropout))
     ])
 
   def forward(self, x, y, attn_mask):
@@ -64,13 +64,13 @@ class StandardDecoderBlock(nn.Module):
       dim,
       depth,
       heads,
-      dim_head,
+      head_dim,
       dropout
       ):
     super(StandardDecoderBlock, self).__init__()
     self.layers = nn.ModuleList([
-            Transformer(dim, depth, heads, dim_head, dropout),
-            Residual(CrossAttention(dim, heads, dim_head, dropout))
+            Transformer(dim, depth, heads, head_dim, dropout),
+            Residual(CrossAttention(dim, heads, head_dim, dropout))
     ])
 
   def forward(self, x, y, attn_mask):

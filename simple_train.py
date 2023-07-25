@@ -11,7 +11,7 @@ import random
 import numpy as np
 from tqdm import tqdm
 
-from pjm.model.training_utils import _setup_logger, load_model
+from pjm.model.training_utils import _setup_logger, load_jem
 from pjm.utils import Collator, Alphabet, AF2SCN
 
 
@@ -144,7 +144,7 @@ def main():
         batch = next(iter(train_loader))
 
     model_args = json.load(open(args.model_config_path, "r"))
-    model = load_model(
+    model = load_jem(
 	devices=(0,1),
 	alphabet=alphabet,
 	model_args=model_args

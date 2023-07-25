@@ -28,6 +28,49 @@ def _setup_logger(logger_name: str, log_level: int):
     return logger
 
 
+def load_jem(
+    devices: Tuple[Union[int, str]],
+    alphabet: Alphabet,
+    model_args: Dict[str, Union[int, str, float, bool]],
+    ) -> nn.Module:
+    
+    dev0, dev1 = devices
+    config = {
+        "dim": model_args["embedding_dim"],
+        "alphabet": alphabet,
+        "num_transformer_blocks": model_args["num_sequence_transformer_blocks"],
+        "contrastive_loss_weight": model_args["contrastive_loss_weight"],
+        "cross_entropy_loss_weight": model_args["cross_entropy_loss_weight"],
+        "cross_exchange_decoding": model_args["cross_exchange_decoding"],
+        'encoder_parallel_device':dev0,
+        'decoder_parallel_device': dev1,
+        'depth': model_args['transformer_block_depth'],
+        'heads': model_args['num_attns_heads'],
+        'head_dim': model_args['attn_head_dim'],
+        'dropout': model_args["dropout"],
+    }
+
+    # Structure encoder args
+    strc_enc_args = {}
+    strc_enc_args = {
+        "node_in_dims": model_args["node_in_dims"],
+        "node_out_dims": model_args["node_out_dims"],
+        "edge_in_dims": model_args["edge_in_dims"],
+        "num_edge_gvps": model_args["num_edge_gvps"],
+        "num_gvp_convs": model_args["num_gvp_convs"],
+        "final_proj_dim": model_args["embedding_dim"],
+        "num_transformer_blocks": model_args["num_structure_transformer_blocks"],
+        "transformer_input_dim": model_args["embedding_dim"],
+        "transformer_block_depth": model_args["tf_depth"],
+        "num_attns_heads": model_args["num_attns_heads"],
+        "attn_head_dim": model_args["attn_head_dim"],
+        "dropout": model_args["dropout"],
+    }
+    config['structure_encoder'] = standard_structure_module(**strc_enc_args)
+
+    return CoCa(**config)
+
+
 def load_model(
     devices: Tuple[Union[int, str]],
     alphabet: Alphabet,

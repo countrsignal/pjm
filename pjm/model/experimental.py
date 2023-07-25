@@ -26,14 +26,14 @@ def standard_structure_module(
     node_out_dims,
     edge_in_dims,
     num_edge_gvps: int,
-    num_mp_layers: int,
+    num_gvp_convs: int,
     final_proj_dim: int,
-    num_tf_blocks: int,
-    tf_dim: int,
-    tf_depth: int,
-    tf_heads: int,
-    tf_dim_head: int,
-    tf_dropout=0.1,
+    num_transformer_blocks: int,
+    transformer_input_dim: int,
+    transformer_block_depth: int,
+    num_attns_heads: int,
+    attn_head_dim: int,
+    dropout=0.1,
     **kwargs
 ):
   encoder = nn.ModuleList(
@@ -49,14 +49,14 @@ def standard_structure_module(
        )
       ]
   )
-  for _ in range(num_tf_blocks):
+  for _ in range(num_transformer_blocks):
     encoder.append(
         Transformer(
-            tf_dim,
-            tf_depth,
-            tf_heads,
-            tf_dim_head,
-            tf_dropout,
+            dim=transformer_input_dim,
+            depth=transformer_block_depth,
+            heads=num_attns_heads,
+            head_dim=attn_head_dim,
+            dropout=dropout,
         )
     )
 
@@ -88,7 +88,7 @@ class CoCa(nn.Module):
       self,
       dim: int,
       alphabet: Alphabet,
-      num_attn_blocks: int,
+      num_transformer_blocks: int,
       structure_encoder: nn.ModuleList,
       contrastive_loss_weight: float = 1.,
       cross_entropy_loss_weight: float = 1.,
@@ -124,7 +124,7 @@ class CoCa(nn.Module):
     )
     
     self.sequence_encoder = nn.ModuleList(
-        [Transformer(dim, **kwargs) for _ in range(num_attn_blocks)]
+        [Transformer(dim, **kwargs) for _ in range(num_transformer_blocks)]
     )
     self.sequence_cls_norm = AttnLayerNorm(dim)
 
@@ -136,7 +136,7 @@ class CoCa(nn.Module):
     #################
     self.decoder = MultiModalDecoder(
         dim=dim,
-        num_layers=num_attn_blocks,
+        num_layers=num_transformer_blocks,
         alphabet_size=len(alphabet.all_toks),
         cross_exchange=cross_exchange_decoding,
         **kwargs
