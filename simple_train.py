@@ -257,8 +257,10 @@ def main():
                     wandb.log({
                         "Cross-Entropy Loss": ce_loss,
                         "Contrastive Loss": ct_loss,
-                        "Total Loss": total.item()
+                        "Total Loss": ce_loss + ct_loss,
                     })
+                    progress_bar.set_description(f"Epoch {epoch + 1}: Loss ({ce_loss + ct_loss})")
+                    
                     # with torch.no_grad():
                     #     if (args.bf16):
                     #         with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=True):
