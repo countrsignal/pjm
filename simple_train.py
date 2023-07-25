@@ -11,7 +11,7 @@ import random
 import numpy as np
 from tqdm import tqdm
 
-from pjm.model.training_utils import _setup_logger, load_jem
+from pjm.utils.training_utils import _setup_logger, load_jem
 from pjm.utils import Collator, Alphabet, AF2SCN
 
 
