@@ -122,7 +122,6 @@ class CoCa(nn.Module):
         dim,
         padding_idx=self.pad_idx
     )
-    
     self.sequence_encoder = nn.ModuleList(
         [Transformer(dim, **kwargs) for _ in range(num_transformer_blocks)]
     )
