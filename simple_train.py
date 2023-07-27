@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 
 import torch
 from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import LambdaLR
 
 import wandb
 import random
@@ -75,6 +76,25 @@ def validate(model, val_loader):
     model.train()
 
     return total
+
+
+class WarmupLinearSchedule(LambdaLR):
+    """ Linear warmup and then linear decay.
+        Linearly increases learning rate from 0 to 1 over `warmup_steps` training steps.
+        Linearly decreases learning rate from 1. to 0. over remaining `t_total - warmup_steps`
+        steps.
+    """
+    def __init__(self, optimizer, warmup_steps, t_total, last_epoch=-1):
+        self.warmup_steps = warmup_steps
+        self.t_total = t_total
+        super(WarmupLinearSchedule, self).__init__(
+            optimizer, self.lr_lambda, last_epoch=last_epoch)
+
+    def lr_lambda(self, step):
+        if step < self.warmup_steps:
+            return float(step) / float(max(1, self.warmup_steps))
+        return max(0.0, float(self.t_total - step) / float(
+            max(1.0, self.t_total - self.warmup_steps)))
 
 
 
@@ -157,14 +177,21 @@ def main():
 
     model.dispatch_params()
 
-    opt = torch.optim.Adam(model.parameters(), lr=args.learning_rate, betas=(0.9, 0.98), eps=1e-9)
-    # opt = torch.optim.AdamW(
-    #     model.parameters(),
-    #     lr=args.learning_rate,
-    #     betas=(0.9, 0.98),
-    #     eps=1e-9,
-    #     weight_decay=model_args["weight_decay"]
-    # )
+    if model_args["weight_decay"] == 0.0:
+        opt = torch.optim.Adam(model.parameters(), lr=args.learning_rate, betas=(0.9, 0.98), eps=1e-9)
+    else:
+        opt = torch.optim.AdamW(
+            model.parameters(),
+            lr=args.learning_rate,
+            betas=(0.9, 0.98),
+            eps=1e-9,
+            weight_decay=model_args["weight_decay"]
+        )
+
+    if model_args["lr_scheduler"]:
+        lr_scheduler = WarmupLinearSchedule(optimizer=opt, **model_args["lr_scheduler"])
+    else:
+        lr_scheduler = None
 
     # nan_watcher = 0
     # prev_batch_pdb_ids = None
@@ -249,6 +276,8 @@ def main():
                     total.backward()
 
                 opt.step()
+                if lr_scheduler:
+                    lr_scheduler.step()
 
                 log_step += 1
                 if log_step % args.log_interval == 0:
