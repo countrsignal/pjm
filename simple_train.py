@@ -198,7 +198,7 @@ def main():
     log_step = 0
     best_val_loss = float("inf")
     total = torch.Tensor([float("inf")])
-    with wandb.init(dir=".", project="joint embeddings", name="simple train", tags=args.tags):
+    with wandb.init(dir=".", project="joint embeddings", name="simple train", tags=args.tags, config=model_args):
         #wandb.watch(model, log_freq=args.log_interval)
         
         for epoch in range(args.num_epochs):

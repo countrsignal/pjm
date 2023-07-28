@@ -129,6 +129,11 @@ class CoCa(nn.Module):
 
     # Structure Encoder
     self.structure_encoder = structure_encoder
+    self.sturcture_global_proj = nn.Sequential(
+      nn.Linear(dim, dim),
+      nn.ReLU(),
+      nn.Linear(dim, dim)
+    )
 
     #################
     #    DECODER
@@ -155,6 +160,7 @@ class CoCa(nn.Module):
       self.sequence_cls_norm = self.sequence_cls_norm.to(self.encoder_parallel_device)
       # Send structure encoder to device
       self.structure_encoder = self.structure_encoder.to(self.encoder_parallel_device)
+      self.sturcture_global_proj = self.sturcture_global_proj.to(self.encoder_parallel_device)
     if self.decoder_parallel_device is not None:
       # Send decoder to device
       self.decoder = self.decoder.to(self.decoder_parallel_device)
@@ -180,11 +186,14 @@ class CoCa(nn.Module):
     # )
     del(edge_feats)
 
+    # Gloabl graph embeddings
     with graph.local_scope():
       graph.ndata['h'] = node_feats
       graph_feats = dgl.mean_nodes(graph, 'h')
+    graph_feats = self.sturcture_global_proj(graph_feats)
 
-    # Reformat node embeddings
+    # Attention over node embeddings
+    # > Reformat node embeddings
     with graph.local_scope():
       graph.ndata['x'] = node_feats
       graph_list = dgl.unbatch(graph)
@@ -211,7 +220,7 @@ class CoCa(nn.Module):
 
     node_feats = torch.cat(features, dim=0)
 
-    # Multi-Head attention
+    # > Multi-Head attention
     for attn_layer in self.structure_encoder[1:]:
       node_feats = attn_layer(node_feats, attn_mask=attn_mask, ar_masking=False)
 
