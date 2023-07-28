@@ -103,7 +103,6 @@ def parse():
     parser.add_argument("--dataset_path", type=str, help="Set path to pre-computed data.")
     parser.add_argument("--model_chkpt_path", type=str, help="Set path to model previously trained model.")
     parser.add_argument("--model_config_path", type=str, help="Set path to model config json.")
-    parser.add_argument("-l", "--learning_rate", type=float, default=3e-4, help="Set learning rate.")
     parser.add_argument("-e", "--num_epochs", type=int, default=100, help="Set number of training epochs.")
     parser.add_argument("-b", "--batch_size", type=int, default=32, help="Set batch size.")
     parser.add_argument("-m", "--max_len", type=int, default=1022, help="Set max size of proteins.")
@@ -178,11 +177,11 @@ def main():
     model.dispatch_params()
 
     if model_args["weight_decay"] == 0.0:
-        opt = torch.optim.Adam(model.parameters(), lr=args.learning_rate, betas=(0.9, 0.98), eps=1e-9)
+        opt = torch.optim.Adam(model.parameters(), lr=model_args["lr"], betas=(0.9, 0.98), eps=1e-9)
     else:
         opt = torch.optim.AdamW(
             model.parameters(),
-            lr=args.learning_rate,
+            lr=model_args["lr"],
             betas=(0.9, 0.98),
             eps=1e-9,
             weight_decay=model_args["weight_decay"]
