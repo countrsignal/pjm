@@ -1,6 +1,5 @@
-from dgl.dataloading import GraphDataLoader
-
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data.distributed import DistributedSampler
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 import torch.multiprocessing as mp
@@ -170,19 +169,19 @@ class Pipeline(object):
             train_set = self.early_stop.get_early_stop_dataset(dataset=train_set)
 
         # Init dataloaders
-        if (self.distributed) and (self.config.multimodal):
-            loader = GraphDataLoader(
+        if (self.distributed):
+            loader = DataLoader(
                     train_set,
-                    use_ddp=True,
+                    shuffle=False,
                     collate_fn=collate_fn,
-                    shuffle=True,
+                    sampler=DistributedSampler(train_set),
                     **kwargs
                     )
         else:
             loader = DataLoader(
                     train_set,
-                    collate_fn=collate_fn,
                     shuffle=True,
+                    collate_fn=collate_fn,
                     **kwargs
             )
         return loader
@@ -198,22 +197,13 @@ class Pipeline(object):
             _filter_by_plddt_coverage=None,
             )
         
-        # Init dataloaders
-        if (self.distributed) and (self.config.multimodal):
-            loader = GraphDataLoader(
-                    val,
-                    use_ddp=True,
-                    collate_fn=collate_fn,
-                    shuffle=False,
-                    **kwargs
-                    )
-        else:
-            loader = DataLoader(
-                    val,
-                    collate_fn=collate_fn,
-                    shuffle=False,
-                    **kwargs
-            )
+        # Init dataloader
+        loader = DataLoader(
+                val,
+                shuffle=False,
+                collate_fn=collate_fn,
+                **kwargs
+        )
         return loader
 
     def train_step(self, epoch_index, batch_index, batch, model, optimizer, scheduler=None):
@@ -276,7 +266,7 @@ class Pipeline(object):
         else:
             return [ce_loss.detach().cpu().item(),]
 
-    def evaluate(self, model, **kwargs):
+    def evaluate(self, validation_loader, model):
 
         if self.distributed:
             device = model.module.encoder_parallel_device
@@ -287,7 +277,7 @@ class Pipeline(object):
         model.eval()
         with torch.no_grad():
             losses = []
-            for batch in self.val_loader(**kwargs):
+            for batch in validation_loader:
                 # Forward pass with autocast
                 with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=self.config.bfloat16):
                     if self.config.multimodal:
@@ -531,20 +521,27 @@ class Pipeline(object):
         ############################
         #       Training Loop
         ############################
+        # > Training loop variables
         global_step = 0
         losses = [None, None]
         best_eval = float("inf")
         timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
+
+        # > Initialize training and validation data loaders
+        train_loader = self.training_loader(**dataloader_args)
+        if (self.distributed):
+            if rank == 0:
+                val_loader = self.val_loader(**dataloader_args)
+        else:
+            val_loader = self.val_loader(**dataloader_args)
+
         for epoch_index in range(self.num_epochs):
-            # > Initialize training data loader
-            train_loader = self.training_loader(**dataloader_args)
 
             # > Initialize TQDM progress bar
-            if self.distributed:
-                # ( ! ) DGL Distributed DataLoader ( ONLY FOR MULTI-MODAL TRAINING )
+            if (self.distributed):
+                # ( ! ) Distributed DataLoader ( ONLY FOR DDP MULTI-GPU TRAINING )
                 # > We need to repeat the random partition every epoch to guarantee randomness
-                if self.config.multimodal:
-                    train_loader.set_epoch(epoch_index)
+                train_loader.sampler.set_epoch(epoch_index)
 
                 if rank == 0:
                     if all([l is None for l in losses]):
@@ -653,7 +650,7 @@ class Pipeline(object):
                             if global_step % self.config.log_interval == 0:
                                 # Evaluate on validation set
                                 if global_step % self.config.val_interval == 0:
-                                    val_loss = self.evaluate(model, **dataloader_args)
+                                    val_loss = self.evaluate(val_loader, model)
                                     run.log({"Validation Set Loss": val_loss})
 
                                     if best_eval > val_loss:
@@ -687,7 +684,7 @@ class Pipeline(object):
                         if global_step % self.config.log_interval == 0:
                             # Evaluate on validation set
                             if global_step % self.config.val_interval == 0:
-                                val_loss = self.evaluate(model, **dataloader_args)
+                                val_loss = self.evaluate(val_loader, model)
                                 run.log({"Validation Set Loss": val_loss})
 
                                 if best_eval > val_loss:
@@ -722,7 +719,7 @@ class Pipeline(object):
                             if global_step % self.config.log_interval == 0:
                                 # Evaluate on validation set
                                 if global_step % self.config.val_interval == 0:
-                                    val_loss = self.evaluate(model, **dataloader_args)
+                                    val_loss = self.evaluate(val_loader, model)
                                     run.log({"Validation Set Loss": val_loss})
 
                                     if best_eval > val_loss:
@@ -750,7 +747,7 @@ class Pipeline(object):
                         if global_step % self.config.log_interval == 0:
                             # Evaluate on validation set
                             if global_step % self.config.val_interval == 0:
-                                val_loss = self.evaluate(model, **dataloader_args)
+                                val_loss = self.evaluate(val_loader, model)
                                 run.log({"Validation Set Loss": val_loss})
 
                                 if best_eval > val_loss:
