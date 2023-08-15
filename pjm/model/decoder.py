@@ -109,7 +109,7 @@ class MultiModalDecoder(nn.Module):
 
     #logit_std = (dim ** -0.5) * ((2 * num_layers) ** -0.5)
     #nn.init.normal_(self.stack[-1].weight, mean=0, std=logit_std)
-    nn.init.zeros_(self.stack[-1].weight)
+    # nn.init.zeros_(self.stack[-1].weight)
   
   def forward(self, x, y, attn_mask):
     for layer in self.stack[:-2]:
