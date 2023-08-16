@@ -38,18 +38,18 @@ def from_pretrained(
 
     ckpt = torch.load(checkpoint_path, map_location=torch.device("cpu"))
     sequence_only = {}
-    for k, v in ckpt["state_dict"].items():
+    for k, v in ckpt["model_state_dict"].items():
         if k.startswith("module.embedding_layer"):
-            sequence_only[k] = v
+            sequence_only[k.replace("module.", "")] = v
         elif k.startswith("module.sequence_encoder"):
-            sequence_only[k] = v
+            sequence_only[k.replace("module.", "")] = v
         elif k.startswith("module.sequence_cls_norm"):
-            sequence_only[k] = v
+            sequence_only[k.replace("module.", "")] = v
         else:
             continue
     del(ckpt)
 
-    embedder.load_state_dict(sequence_only, strict=False)
+    embedder.load_state_dict(sequence_only, strict=True)
     return embedder
 
 
