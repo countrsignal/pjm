@@ -23,9 +23,9 @@ def from_pretrained(
         model_args = json.load(f)
 
     transformer_config = {
-        "depth": model_args["depth"],
-        "heads": model_args["heads"],
-        "head_dim": model_args["head_dim"],
+        "depth": model_args["transformer_block_depth"],
+        "heads": model_args["num_attns_heads"],
+        "head_dim": model_args["attn_head_dim"],
         "dropout": model_args["dropout"],
     }
     embedder = Embedder(

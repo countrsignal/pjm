@@ -368,15 +368,15 @@ class Pipeline(object):
                     model = load_jem((dev0, dev1), self.alphabet, model_args)
                 else:
                     transformer_config = {
-                        "depth": model_args["depth"],
-                        "heads": model_args["heads"],
-                        "head_dim": model_args["head_dim"],
+                        "depth": model_args["transformer_block_depth"],
+                        "heads": model_args["num_attns_heads"],
+                        "head_dim": model_args["attn_head_dim"],
                         "dropout": model_args["dropout"],
                     }
                     model = BaselineModel(
-                        dim=model_args["head_dim"],
+                        dim=model_args["embedding_dim"],
                         alphabet=self.alphabet,
-                        num_layers=model_args["num_layers"],
+                        num_layers=model_args["num_transformer_blocks"],
                         encoder_parallel_device=dev0,
                         decoder_parallel_device=dev1,
                         **transformer_config,
@@ -463,15 +463,15 @@ class Pipeline(object):
                     model = load_jem((dev0, dev1), self.alphabet, model_args)
                 else:
                     transformer_config = {
-                        "depth": model_args["depth"],
-                        "heads": model_args["heads"],
-                        "head_dim": model_args["head_dim"],
+                        "depth": model_args["transformer_block_depth"],
+                        "heads": model_args["num_attns_heads"],
+                        "head_dim": model_args["attn_head_dim"],
                         "dropout": model_args["dropout"],
                     }
                     model = BaselineModel(
-                        dim=model_args["head_dim"],
+                        dim=model_args["embedding_dim"],
                         alphabet=self.alphabet,
-                        num_layers=model_args["num_layers"],
+                        num_layers=model_args["num_transformer_blocks"],
                         encoder_parallel_device=dev0,
                         decoder_parallel_device=dev1,
                         **transformer_config,
