@@ -495,7 +495,11 @@ class Pipeline(object):
                         eps=1e-9,
                     )
 
-                lr_scheduler = None
+                if model_args["lr_scheduler"]:
+                    lr_scheduler = WarmupLinearSchedule(optimizer=opt, **model_args["lr_scheduler"])
+                else:
+                    lr_scheduler = None
+                    
             else:
                 if self.config.weight_decay:
                     opt = torch.optim.AdamW(

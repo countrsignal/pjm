@@ -70,14 +70,16 @@ class StandardDecoderBlock(nn.Module):
     super(StandardDecoderBlock, self).__init__()
     self.layers = nn.ModuleList([
             Transformer(dim, depth, heads, head_dim, dropout),
+            Transformer(dim, depth, heads, head_dim, dropout),
             Residual(CrossAttention(dim, heads, head_dim, dropout))
     ])
 
   def forward(self, x, y, attn_mask):
-    unimod_x, cross_xy = self.layers
+    unimod_x, unimod_y, cross_xy = self.layers
     
     # Update unimodal representations
     x = unimod_x(x, attn_mask, ar_masking=False)
+    y = unimod_y(y, attn_mask, ar_masking=False)
 
     # Update multimodal representations
     x = cross_xy(x, context=y)
