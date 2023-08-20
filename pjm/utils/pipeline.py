@@ -317,7 +317,7 @@ class Pipeline(object):
                 dir=".",
                 config=vars(self.config),
                 project="joint embeddings",
-                name="jess" if self.config.multimodal else "baseline",
+                name=f"jess-{self.config.name}" if self.config.multimodal else f"baseline-{self.config.name}",
                 tags=self.config.tags
             )
             run_dir = run.dir
@@ -329,7 +329,7 @@ class Pipeline(object):
                     dir=".",
                     config=vars(self.config),
                     project="joint embeddings",
-                    name="jess" if self.config.multimodal else "baseline",
+                    name=f"jess-{self.config.name}" if self.config.multimodal else f"baseline-{self.config.name}",
                     tags=self.config.tags,
                 )
                 run_dir = run.dir
@@ -401,7 +401,11 @@ class Pipeline(object):
                         eps=1e-9,
                     )
 
-                lr_scheduler = None
+                if model_args["lr_scheduler"]:
+                    lr_scheduler = WarmupLinearSchedule(optimizer=opt, **model_args["lr_scheduler"])
+                else:
+                    lr_scheduler = None
+
             else:
                 if self.config.weight_decay:
                     opt = torch.optim.AdamW(

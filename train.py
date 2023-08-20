@@ -43,6 +43,7 @@ def parse():
                         default=1000, help="Set validation set evaluation frequency.")
     parser.add_argument("--tags", nargs="+", help="W&B run tags.")
     parser.add_argument("--seed", type=int, help="Set random seed.")
+    parser.add_argument("--name", type=str, help="Name for W&B run.")
     return parser.parse_args()
 
 
