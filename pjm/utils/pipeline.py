@@ -366,6 +366,8 @@ class Pipeline(object):
                 # << ! >> Multi-modal or Uni-modal model
                 if self.config.multimodal:
                     model = load_jem((dev0, dev1), self.alphabet, model_args)
+                    if (rank == 0):
+                        print('Trainable Params: ', sum(p.numel() for p in model.parameters() if p.requires_grad))
                 else:
                     transformer_config = {
                         "depth": model_args["transformer_block_depth"],
@@ -381,6 +383,8 @@ class Pipeline(object):
                         decoder_parallel_device=dev1,
                         **transformer_config,
                     )
+                    if (rank == 0):
+                        print('Trainable Params: ', sum(p.numel() for p in model.parameters() if p.requires_grad))
             model = DDP(model, broadcast_buffers=False)
 
             # > Optimizer
@@ -480,6 +484,7 @@ class Pipeline(object):
                         decoder_parallel_device=dev1,
                         **transformer_config,
                     )
+                print('Trainable Params: ', sum(p.numel() for p in model.parameters() if p.requires_grad))
             
             # > Optimizer
             if self.config.multimodal:
@@ -533,7 +538,7 @@ class Pipeline(object):
         global_step = 0
         losses = [None, None]
         best_eval = float("inf")
-        timestamp = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
+        timestamp = datetime.now().strftime("%d-%m-%Y-%Hc%Mc%S")
 
         # > Initialize training and validation data loaders
         train_loader = self.training_loader(**dataloader_args)
@@ -655,9 +660,9 @@ class Pipeline(object):
                     # > Logging training and validation loss
                     if (self.distributed) and (self.config.multimodal):
                         if rank == 0:
-                            if global_step % self.config.log_interval == 0:
+                            if (global_step % self.config.log_interval) == 0:
                                 # Evaluate on validation set
-                                if global_step % self.config.val_interval == 0:
+                                if (global_step % self.config.val_interval) == 0:
                                     val_loss = self.evaluate(val_loader, model)
                                     run.log({"Validation Set Loss": val_loss})
 
@@ -670,7 +675,7 @@ class Pipeline(object):
                                                 }
                                         torch.save(
                                                 checkpoint_state,
-                                                os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
+                                                os.path.join(run_dir, f'{self.config.name}_ckpt_{timestamp}.pth')
                                                 )
 
                                 # Re-weight multi-modal losses
@@ -689,9 +694,9 @@ class Pipeline(object):
                                 })
 
                     elif (not self.distributed) and (self.config.multimodal):
-                        if global_step % self.config.log_interval == 0:
+                        if (global_step % self.config.log_interval) == 0:
                             # Evaluate on validation set
-                            if global_step % self.config.val_interval == 0:
+                            if (global_step % self.config.val_interval) == 0:
                                 val_loss = self.evaluate(val_loader, model)
                                 run.log({"Validation Set Loss": val_loss})
 
@@ -704,7 +709,7 @@ class Pipeline(object):
                                             }
                                     torch.save(
                                             checkpoint_state,
-                                            os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
+                                            os.path.join(run_dir, f'{self.config.name}_ckpt_{timestamp}.pth')
                                             )
                             
                             # Re-weight multi-modal losses
@@ -724,9 +729,9 @@ class Pipeline(object):
 
                     elif (self.distributed) and (not self.config.multimodal):
                         if rank == 0:
-                            if global_step % self.config.log_interval == 0:
+                            if (global_step % self.config.log_interval) == 0:
                                 # Evaluate on validation set
-                                if global_step % self.config.val_interval == 0:
+                                if (global_step % self.config.val_interval) == 0:
                                     val_loss = self.evaluate(val_loader, model)
                                     run.log({"Validation Set Loss": val_loss})
 
@@ -739,7 +744,7 @@ class Pipeline(object):
                                                 }
                                         torch.save(
                                                 checkpoint_state,
-                                                os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
+                                                os.path.join(run_dir, f'{self.config.name}_ckpt_{timestamp}.pth')
                                                 )
 
                                 # Update TQDM progress bar
@@ -752,9 +757,9 @@ class Pipeline(object):
                                 })
 
                     else:
-                        if global_step % self.config.log_interval == 0:
+                        if (global_step % self.config.log_interval) == 0:
                             # Evaluate on validation set
-                            if global_step % self.config.val_interval == 0:
+                            if (global_step % self.config.val_interval) == 0:
                                 val_loss = self.evaluate(val_loader, model)
                                 run.log({"Validation Set Loss": val_loss})
 
@@ -767,7 +772,7 @@ class Pipeline(object):
                                             }
                                     torch.save(
                                             checkpoint_state,
-                                            os.path.join(run_dir, f'model_chkpt_{timestamp}.pth')
+                                            os.path.join(run_dir, f'{self.config.name}_ckpt_{timestamp}.pth')
                                             )
                             
                             # Update TQDM progress bar
