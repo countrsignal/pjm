@@ -535,10 +535,17 @@ class Pipeline(object):
         #       Training Loop
         ############################
         # > Training loop variables
-        global_step = 0
-        losses = [None, None]
-        best_eval = float("inf")
-        timestamp = datetime.now().strftime("%d-%m-%Y-%Hc%Mc%S")
+        if (self.distributed):
+            if rank == 0:
+                global_step = 0
+                losses = [None, None]
+                best_eval = float("inf")
+                timestamp = datetime.now().strftime("%d-%m-%Y-%Hc%Mc%S")
+        else:
+            global_step = 0
+            losses = [None, None]
+            best_eval = float("inf")
+            timestamp = datetime.now().strftime("%d-%m-%Y-%Hc%Mc%S")
 
         # > Initialize training and validation data loaders
         train_loader = self.training_loader(**dataloader_args)
@@ -605,7 +612,11 @@ class Pipeline(object):
             for batch_index, batch in training_progress_bar:
 
                 losses = self.train_step(epoch_index, batch_index, batch, model, opt, lr_scheduler)
-                global_step += 1
+                if (self.distributed):
+                    if rank == 0:
+                        global_step += 1
+                else:
+                    global_step += 1
 
                 # Skip Validation if unit test is enabled
                 if _unit_test_enabled(self.unit_test):
