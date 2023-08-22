@@ -393,7 +393,7 @@ class Pipeline(object):
                     opt = torch.optim.AdamW(
                         model.parameters(),
                         lr=model_args["lr"],
-                        betas=(0.9, 0.98),
+                        betas=(0.9, 0.95),
                         eps=1e-9,
                         weight_decay=model_args["weight_decay"],
                         )
@@ -401,7 +401,7 @@ class Pipeline(object):
                     opt = torch.optim.Adam(
                         model.parameters(),
                         lr=model_args["lr"],
-                        betas=(0.9, 0.98),
+                        betas=(0.9, 0.95),
                         eps=1e-9,
                     )
 
@@ -415,7 +415,7 @@ class Pipeline(object):
                     opt = torch.optim.AdamW(
                         model.parameters(),
                         lr=model_args["lr"],
-                        betas=(0.9, 0.98),
+                        betas=(0.9, 0.95),
                         eps=1e-9,
                         weight_decay=model_args["weight_decay"],
                         )
@@ -423,7 +423,7 @@ class Pipeline(object):
                     opt = torch.optim.Adam(
                         model.parameters(),
                         lr=model_args["lr"],
-                        betas=(0.9, 0.98),
+                        betas=(0.9, 0.95),
                         eps=1e-9,
                     )
 
@@ -492,7 +492,7 @@ class Pipeline(object):
                     opt = torch.optim.AdamW(
                         model.parameters(),
                         lr=model_args["lr"],
-                        betas=(0.9, 0.98),
+                        betas=(0.9, 0.95),
                         eps=1e-9,
                         weight_decay=model_args["weight_decay"],
                         )
@@ -500,7 +500,7 @@ class Pipeline(object):
                     opt = torch.optim.Adam(
                         model.parameters(),
                         lr=model_args["lr"],
-                        betas=(0.9, 0.98),
+                        betas=(0.9, 0.95),
                         eps=1e-9,
                     )
 
@@ -514,7 +514,7 @@ class Pipeline(object):
                     opt = torch.optim.AdamW(
                         model.parameters(),
                         lr=model_args["lr"],
-                        betas=(0.9, 0.98),
+                        betas=(0.9, 0.95),
                         eps=1e-9,
                         weight_decay=model_args["weight_decay"],
                         )
@@ -522,7 +522,7 @@ class Pipeline(object):
                     opt = torch.optim.Adam(
                         model.parameters(),
                         lr=model_args["lr"],
-                        betas=(0.9, 0.98),
+                        betas=(0.9, 0.95),
                         eps=1e-9,
                     )
 
