@@ -671,7 +671,8 @@ class Pipeline(object):
                                         checkpoint_state = {
                                                 'epoch': epoch_index,
                                                 'model_state_dict': model.state_dict(),
-                                                'optimizer_state_dict': opt.state_dict()
+                                                'optimizer_state_dict': opt.state_dict(),
+                                                'lr_scheduler_state_dict': lr_scheduler.state_dict() if lr_scheduler is not None else None,
                                                 }
                                         torch.save(
                                                 checkpoint_state,
@@ -705,7 +706,8 @@ class Pipeline(object):
                                     checkpoint_state = {
                                             'epoch': epoch_index,
                                             'model_state_dict': model.state_dict(),
-                                            'optimizer_state_dict': opt.state_dict()
+                                            'optimizer_state_dict': opt.state_dict(),
+                                            'lr_scheduler_state_dict': lr_scheduler.state_dict() if lr_scheduler is not None else None,
                                             }
                                     torch.save(
                                             checkpoint_state,
@@ -740,7 +742,8 @@ class Pipeline(object):
                                         checkpoint_state = {
                                                 'epoch': epoch_index,
                                                 'model_state_dict': model.state_dict(),
-                                                'optimizer_state_dict': opt.state_dict()
+                                                'optimizer_state_dict': opt.state_dict(),
+                                                'lr_scheduler_state_dict': lr_scheduler.state_dict() if lr_scheduler is not None else None,
                                                 }
                                         torch.save(
                                                 checkpoint_state,
@@ -768,7 +771,8 @@ class Pipeline(object):
                                     checkpoint_state = {
                                             'epoch': epoch_index,
                                             'model_state_dict': model.state_dict(),
-                                            'optimizer_state_dict': opt.state_dict()
+                                            'optimizer_state_dict': opt.state_dict(),
+                                            'lr_scheduler_state_dict': lr_scheduler.state_dict() if lr_scheduler is not None else None,
                                             }
                                     torch.save(
                                             checkpoint_state,
