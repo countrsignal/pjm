@@ -34,7 +34,7 @@ def _check_sanity(loss):
     return (torch.isnan(loss) or torch.isinf(loss))
 
 
-def validate(model, val_loader):
+def validate(model, args, val_loader):
     # Averages
     ce_loss = []
     ct_loss = []
@@ -44,6 +44,14 @@ def validate(model, val_loader):
     with torch.no_grad():
         for batch_index, batch in enumerate(val_loader):
             sequences, *structures = batch.process_data(0)
+
+            if args.structure_test:
+                g, n, e = structures
+                ns, nv = n
+                nv = nv.mean(dim=-2, keepdim=True)
+                n = (ns, nv)
+                structures = (g, n, e)
+
             ct_loss, ce_loss = model(
                 sequences,
                 structures,
@@ -114,6 +122,7 @@ def parse():
     parser.add_argument("--detect_anomaly", action="store_true", help="Set to detect anomaly.")
     parser.add_argument("--bf16", action="store_true", help="Enable mixed precision training (for BFloat16 ONLY).")
     parser.add_argument("--fwd_test", action="store_true", help="Run a simple forward pass unit test.")
+    parser.add_argument("--structure_test", action="store_true", help="Test whether the model is cheating counting padding dimensions.")
     return parser.parse_args()
 
 
@@ -128,12 +137,12 @@ def main():
 	dataset_path=args.dataset_path,
 	_filter_by_plddt_coverage=None
     )
-    # val_ds = AF2SCN(
-	# "val",
-	# max_len=args.max_len,
-	# dataset_path=args.dataset_path,
-	# _filter_by_plddt_coverage=None
-    # )
+    val_ds = AF2SCN(
+	"val",
+	max_len=args.max_len,
+	dataset_path=args.dataset_path,
+	_filter_by_plddt_coverage=None
+    )
 
     alphabet = Alphabet(
 	prepend_toks = ("<sos>", "<eos>", "<unk>"),
@@ -150,19 +159,21 @@ def main():
 	collate_fn=collate_fn,
 	shuffle=True,
     )
-    # val_loader = DataLoader(
-    # val_ds,
-    # batch_size=args.batch_size,
-    # num_workers=args.num_workers,
-    # collate_fn=collate_fn,
-    # shuffle=False,
-    # )
+    val_loader = DataLoader(
+    val_ds,
+    batch_size=args.batch_size,
+    num_workers=args.num_workers,
+    collate_fn=collate_fn,
+    shuffle=False,
+    )
 
     # Create a single batch for forward pass unit test
     if (args.fwd_test):
         batch = next(iter(train_loader))
 
     model_args = json.load(open(args.model_config_path, "r"))
+    if args.structure_test:
+        model_args["node_in_dims"][1]  = 1
     model = load_jem(
 	devices=(0,1),
 	alphabet=alphabet,
@@ -198,7 +209,6 @@ def main():
     best_val_loss = float("inf")
     total = torch.Tensor([float("inf")])
     with wandb.init(dir=".", project="joint embeddings", name="simple train", tags=args.tags, config=model_args):
-        #wandb.watch(model, log_freq=args.log_interval)
         
         for epoch in range(args.num_epochs):
             if (args.fwd_test):
@@ -222,6 +232,13 @@ def main():
                         break
 
                 sequences, *structures = batch.process_data(0)
+
+                if args.structure_test:
+                    g, n, e = structures
+                    ns, nv = n
+                    nv = nv.mean(dim=-2, keepdim=True)
+                    n = (ns, nv)
+                    structures = (g, n, e)
 
                 opt.zero_grad()
 
@@ -287,35 +304,20 @@ def main():
                         "Contrastive Loss": ct_loss,
                         "Total Loss": ce_loss + ct_loss,
                     })
-                    progress_bar.set_description(f"Epoch {epoch + 1}: Loss ({ce_loss + ct_loss})")
+                    # progress_bar.set_description(f"Epoch {epoch + 1}: Loss ({ce_loss + ct_loss})")
                     
-                    # with torch.no_grad():
-                    #     if (args.bf16):
-                    #         with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=True):
-                    #             seq_embs, strc_embs = model(
-                    #                 sequences,
-                    #                 structures,
-                    #                 return_embeddings=True,
-                    #             )
-                    #     else:
-                    #         seq_embs, strc_embs = model(
-                    #             sequences,
-                    #             structures,
-                    #             return_embeddings=True,
-                    #         )
-                    
-                    # avg_val_loss = validate(model, val_loader)
-                    # progress_bar.set_description(f"Epoch {epoch + 1}: Train Loss ({total.item()}), Val Loss ({avg_val_loss})")
+                    avg_val_loss = validate(model, val_loader)
+                    progress_bar.set_description(f"Epoch {epoch + 1}: Train Loss ({ce_loss + ct_loss}), Val Loss ({avg_val_loss})")
 
-                    # if best_val_loss > avg_val_loss:
-                    #     best_val_loss = avg_val_loss
-                    #     checkpoint_state = {
-                    #             'model_state_dict': model.state_dict(),
-                    #     }
-                    #     torch.save(
-                    #             checkpoint_state,
-                    #             os.path.join(args.model_chkpt_path, 'model_chkpt_simple_train.pth')
-                    #     )
+                    if best_val_loss > avg_val_loss:
+                        best_val_loss = avg_val_loss
+                        checkpoint_state = {
+                                'model_state_dict': model.state_dict(),
+                        }
+                        torch.save(
+                                checkpoint_state,
+                                os.path.join(args.model_chkpt_path, 'model_chkpt_simple_train.pth')
+                        )
 
 
 if __name__ == "__main__":
