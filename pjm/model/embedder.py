@@ -17,7 +17,7 @@ def from_pretrained(
         checkpoint_path: str,
         model_config_path: str,
     ):
-    assert (model_type.startswith("pjm") or model_type.startswith("plm")), f"Model type {model_type} not supported."
+    assert (model_type.startswith("pjm") or model_type.startswith("plm_baseline")), f"Model type {model_type} not supported."
 
     with open(model_config_path, "r") as f:
         model_args = json.load(f)
@@ -32,21 +32,34 @@ def from_pretrained(
         embedding_dim=model_args["embedding_dim"],
         alphabet=alphabet,
         num_transformer_blocks=model_args["num_sequence_transformer_blocks"] if model_type == "pjm" else model_args["num_transformer_blocks"],
-        include_cls_norm=True if model_type == "pjm" else False,
+        include_cls_norm=True,
         **transformer_config,
     )
 
     ckpt = torch.load(checkpoint_path, map_location=torch.device("cpu"))
     sequence_only = {}
-    for k, v in ckpt["model_state_dict"].items():
-        if k.startswith("module.embedding_layer"):
-            sequence_only[k.replace("module.", "")] = v
-        elif k.startswith("module.sequence_encoder"):
-            sequence_only[k.replace("module.", "")] = v
-        elif k.startswith("module.sequence_cls_norm"):
-            sequence_only[k.replace("module.", "")] = v
-        else:
-            continue
+    if model_type.startswith("pjm"):
+        for k, v in ckpt["model_state_dict"].items():
+            if k.startswith("module.embedding_layer"):
+                sequence_only[k.replace("module.", "")] = v
+            elif k.startswith("module.sequence_encoder"):
+                sequence_only[k.replace("module.", "")] = v
+            elif k.startswith("module.sequence_cls_norm"):
+                sequence_only[k.replace("module.", "")] = v
+            else:
+                continue
+    elif model_type.startswith("plm_baseline"):
+        for k, v in ckpt["model_state_dict"].items():
+            if k.startswith("module.embedding_layer"):
+                sequence_only[k.replace("module.", "")] = v
+            elif k.startswith("module.encoder"):
+                sequence_only[k.replace("module.encoder", "sequence_encoder")] = v
+            elif k.startswith("module.sequence_cls_norm"):
+                sequence_only[k.replace("module.", "")] = v
+            else:
+                continue
+    else:
+        raise NotImplementedError
     del(ckpt)
 
     embedder.load_state_dict(sequence_only, strict=True)
