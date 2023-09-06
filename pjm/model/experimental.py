@@ -93,6 +93,7 @@ class CoCa(nn.Module):
       contrastive_loss_weight: float = 1.,
       cross_entropy_loss_weight: float = 1.,
       cross_exchange_decoding: bool = False,
+      structure_reconstruction: bool = False,
       encoder_parallel_device: Optional[str] = None,
       decoder_parallel_device: Optional[str] = None,
       **kwargs
@@ -108,6 +109,7 @@ class CoCa(nn.Module):
     self.tokens_to_keep = [alphabet.get_idx(aa) for aa in alphabet.all_toks if alphabet.get_idx(aa) not in self.tokens_to_ignore]
     self.contrastive_loss_weight = contrastive_loss_weight
     self.cross_entropy_loss_weight = cross_entropy_loss_weight
+    self.structure_reconstruction = structure_reconstruction
     # > contrastive learning temperature
     self.temperature = nn.ParameterDict({
       'temperature': nn.Parameter(torch.tensor([0.007]), requires_grad=False)
@@ -239,9 +241,6 @@ class CoCa(nn.Module):
     device = sequences.device
     with torch.no_grad():
 
-      # Get structure input features
-      graph, node_feats, edge_feats = structures
-
       # Separate the sequences to be masks from input sequences
       masked_sequences = sequences.clone().detach()
 
@@ -269,17 +268,21 @@ class CoCa(nn.Module):
           random_token_prob,
         )
 
-      # > Structure Masks
-      gvp_node_masks = get_structure_mask(
-        sequences,
-        sequence_mask=tokens_mask,
-        eos_index=self.eos_idx,
-      )
-      # >> Apply masks to structures
-      corrupted_node_feats = apply_structure_mask(
-        node_feats,
-        gvp_node_masks,
-      )
+      # Corrupt structure input ( if required )
+      if self.structure_reconstruction:
+        # > Get structure input features
+        graph, node_feats, edge_feats = structures
+        # > Structure Masks
+        gvp_node_masks = get_structure_mask(
+          sequences,
+          sequence_mask=tokens_mask,
+          eos_index=self.eos_idx,
+        )
+        # >> Apply masks to structures
+        corrupted_node_feats = apply_structure_mask(
+          node_feats,
+          gvp_node_masks,
+        )
 
       # Labels mask
       # > > Select all non-masked tokens in labels to ignore in loss
@@ -321,7 +324,7 @@ class CoCa(nn.Module):
     )
     strc_embs, strc_tokens = self.embed_structure(
       # structures,
-      (graph, corrupted_node_feats, edge_feats),
+      (graph, corrupted_node_feats, edge_feats) if self.structure_reconstruction else structures,
       attn_mask=seq_dec_mask,
       # gvp_node_masks=gvp_node_masks,
       gvp_node_masks=None,

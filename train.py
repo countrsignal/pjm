@@ -4,6 +4,9 @@ from argparse import ArgumentParser
 
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
+#os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+#os.environ["WORLD_SIZE"] = "3"
 
 
 import torch
@@ -68,10 +71,7 @@ def main(num_gpus, enable_parallel_training):
     #   Train
     ############
     model_args = json.load(open(args.model_config_path))
-    pipe = Pipeline(
-        training_args=args,
-        parallel_training=enable_parallel_training,
-    )
+    pipe = Pipeline(training_args=args, parallel_training=enable_parallel_training)
     if not enable_parallel_training:
         pipe.fit(
             rank=None,
@@ -79,7 +79,7 @@ def main(num_gpus, enable_parallel_training):
             model_args=model_args,
             dataloader_args=loader_args,
             unit_test_callback=Overfit() if args.overfit else None,
-            early_stop_callback=EarlyStopping() if args.early_stopping else None,
+            early_stop_callback=EarlyStopping() if args.early_stopping else None,            
         )
     else:
         launch_ddp(
@@ -88,7 +88,7 @@ def main(num_gpus, enable_parallel_training):
             model_args=model_args,
             dataloader_args=loader_args,
             unit_test_callback=Overfit() if args.overfit else None,
-            early_stop_callback=EarlyStopping() if args.early_stopping else None,
+            early_stop_callback=EarlyStopping() if args.early_stopping else None,            
         )
 
 
@@ -97,6 +97,7 @@ if __name__ == '__main__':
     print(f"\nFound {n_gpus} GPUs available.\n")
     if n_gpus > 2:
         assert (n_gpus % 2) == 0, "Number of GPUs must be even."
+        print(f"World Size: {n_gpus // 2}.\n")
         main(n_gpus, enable_parallel_training=True)
     else:
         main(n_gpus, enable_parallel_training=False)

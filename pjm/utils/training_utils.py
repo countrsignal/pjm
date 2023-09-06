@@ -42,6 +42,7 @@ def load_jem(
         "contrastive_loss_weight": model_args["contrastive_loss_weight"],
         "cross_entropy_loss_weight": model_args["cross_entropy_loss_weight"],
         "cross_exchange_decoding": model_args["cross_exchange_decoding"],
+        "structure_reconstruction": model_args["structure_reconstruction"],
         'encoder_parallel_device':dev0,
         'decoder_parallel_device': dev1,
         'depth': model_args['transformer_block_depth'],

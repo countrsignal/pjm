@@ -17,7 +17,7 @@ def from_pretrained(
         checkpoint_path: str,
         model_config_path: str,
     ):
-    assert model_type in ["pjm", "plm"], f"Model type {model_type} not supported. Please choose from ['pjm', 'plm']"
+    assert (model_type.startswith("pjm") or model_type.startswith("plm")), f"Model type {model_type} not supported."
 
     with open(model_config_path, "r") as f:
         model_args = json.load(f)

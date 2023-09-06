@@ -378,7 +378,7 @@ class Pipeline(object):
                     model = BaselineModel(
                         dim=model_args["embedding_dim"],
                         alphabet=self.alphabet,
-                        num_layers=model_args["num_transformer_blocks"],
+                        num_transformer_blocks=model_args["num_transformer_blocks"],
                         encoder_parallel_device=dev0,
                         decoder_parallel_device=dev1,
                         **transformer_config,
@@ -479,7 +479,7 @@ class Pipeline(object):
                     model = BaselineModel(
                         dim=model_args["embedding_dim"],
                         alphabet=self.alphabet,
-                        num_layers=model_args["num_transformer_blocks"],
+                        num_transformer_blocks=model_args["num_transformer_blocks"],
                         encoder_parallel_device=dev0,
                         decoder_parallel_device=dev1,
                         **transformer_config,
