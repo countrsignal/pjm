@@ -34,11 +34,9 @@ def _check_sanity(loss):
     return (torch.isnan(loss) or torch.isinf(loss))
 
 
-def validate(model, args, val_loader):
+def validate(args, model, val_loader):
     # Averages
-    ce_loss = []
-    ct_loss = []
-    total = []
+    total_list = []
     # Validation loop
     model.eval()
     with torch.no_grad():
@@ -52,38 +50,33 @@ def validate(model, args, val_loader):
                 n = (ns, nv)
                 structures = (g, n, e)
 
-            ct_loss, ce_loss = model(
+            ct_loss, ce_loss, total = model(
                 sequences,
                 structures,
             )
-            total = ct_loss + ce_loss
             if _check_sanity(total):
                 logging.warning(f"Validation loss is NaN. Skipping...")
                 continue
             
             ce_loss = ce_loss.detach().item()
             ct_loss = ct_loss.detach().item()
-            total = total.detach().item()
-            ce_loss.append(ce_loss)
-            ct_loss.append(ct_loss)
-            total.append(total)
+            ce_loss = ce_loss / model.cross_entropy_loss_weight
+            ct_loss = ct_loss / model.contrastive_loss_weight
+            total_adjusted = ce_loss + ct_loss
+            total_list.append(total_adjusted)
     
     # Log validation metrics
     # > Calculate averages for logging
-    ce_loss = sum(ce_loss) / len(ce_loss)
-    ct_loss = sum(ct_loss) / len(ct_loss)
-    total = sum(total) / len(total)
+    avg_total = sum(total_list) / len(total_list)
     # > Log to W&B
     wandb.log({
-        "Validation Masked Cross-Entropy": ce_loss,
-        "Validation Contrastive": ct_loss,
-        "Validation Total": total,
+        "Validation Set Loss": avg_total,
     })
     
     # Return model to training mode
     model.train()
 
-    return total
+    return avg_total
 
 
 class WarmupLinearSchedule(LambdaLR):
@@ -118,6 +111,7 @@ def parse():
     parser.add_argument("-p", "--prefetch_factor", default=100000, type=int, help="Determine how many batches to cache.")
     parser.add_argument("--load_from_chkpt", type=str, help="Load from checkpoint.")
     parser.add_argument("--log_interval", type=int, default=50000, help="Set logging frequency.")
+    parser.add_argument("--val_interval", type=int, default=50000, help="Set logging frequency.")
     parser.add_argument("--tags", nargs="+", help="W&B run tags.")
     parser.add_argument("--detect_anomaly", action="store_true", help="Set to detect anomaly.")
     parser.add_argument("--bf16", action="store_true", help="Enable mixed precision training (for BFloat16 ONLY).")
@@ -207,7 +201,7 @@ def main():
     # prev_batch_pdb_ids = None
     log_step = 0
     best_val_loss = float("inf")
-    total = torch.Tensor([float("inf")])
+    total_adjusted = float("inf")
     with wandb.init(dir=".", project="joint embeddings", name="simple train", tags=args.tags, config=model_args):
         
         for epoch in range(args.num_epochs):
@@ -215,14 +209,14 @@ def main():
                 progress_bar = tqdm(
                     enumerate([batch]),
                     total=1,
-                    desc=f"Epoch {epoch + 1}: Loss ({total.item()})",
+                    desc=f"Epoch {epoch + 1}: Train Loss ({total_adjusted}), Best Val Loss ({best_val_loss})",
                     mininterval=args.log_interval
                 )
             else:                
                 progress_bar = tqdm(
                     enumerate(train_loader),
                     total=len(train_loader),
-                    desc=f"Epoch {epoch + 1}: Loss ({total.item()})",
+                    desc=f"Epoch {epoch + 1}: Train Loss ({total_adjusted}), Best Val Loss ({best_val_loss})",
                     mininterval=args.log_interval
                 )
 
@@ -245,11 +239,10 @@ def main():
                 # Hunt for NaN's in the backward pass
                 if args.detect_anomaly:
                     with torch.autograd.detect_anomaly():
-                        ct_loss, ce_loss = model(
+                        ct_loss, ce_loss, total = model(
                             sequences,
                             structures,
                         )
-                        total = ct_loss + ce_loss
                         total.backward()
                         
 #                        total = 0.
@@ -299,25 +292,31 @@ def main():
                 if log_step % args.log_interval == 0:
                     ce_loss = ce_loss.detach().item()
                     ct_loss = ct_loss.detach().item()
+
+                    ce_loss = ce_loss / model_args["cross_entropy_loss_weight"]
+                    ct_loss = ct_loss / model_args["contrastive_loss_weight"]
+                    total_adjusted = ce_loss + ct_loss
+
                     wandb.log({
                         "Cross-Entropy Loss": ce_loss,
                         "Contrastive Loss": ct_loss,
-                        "Total Loss": ce_loss + ct_loss,
+                        "Total Loss": total_adjusted,
                     })
-                    # progress_bar.set_description(f"Epoch {epoch + 1}: Loss ({ce_loss + ct_loss})")
                     
-                    avg_val_loss = validate(model, val_loader)
-                    progress_bar.set_description(f"Epoch {epoch + 1}: Train Loss ({ce_loss + ct_loss}), Val Loss ({avg_val_loss})")
+                    if log_step % args.val_interval == 0:
+                        avg_val_loss = validate(args, model, val_loader)
 
-                    if best_val_loss > avg_val_loss:
-                        best_val_loss = avg_val_loss
-                        checkpoint_state = {
-                                'model_state_dict': model.state_dict(),
-                        }
-                        torch.save(
-                                checkpoint_state,
-                                os.path.join(args.model_chkpt_path, 'model_chkpt_simple_train.pth')
-                        )
+                        if best_val_loss > avg_val_loss:
+                            best_val_loss = avg_val_loss
+                            checkpoint_state = {
+                                    'model_state_dict': model.state_dict(),
+                            }
+                            torch.save(
+                                    checkpoint_state,
+                                    os.path.join(args.model_chkpt_path, 'model_chkpt_simple_train.pth')
+                            )
+                    
+                    progress_bar.set_description(f"Epoch {epoch + 1}: Train Loss ({total_adjusted}), Best Val Loss ({best_val_loss})")
 
 
 if __name__ == "__main__":
