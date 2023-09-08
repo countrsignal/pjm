@@ -40,22 +40,28 @@ def from_pretrained(
     sequence_only = {}
     if model_type.startswith("pjm"):
         for k, v in ckpt["model_state_dict"].items():
-            if k.startswith("module.embedding_layer"):
-                sequence_only[k.replace("module.", "")] = v
-            elif k.startswith("module.sequence_encoder"):
-                sequence_only[k.replace("module.", "")] = v
-            elif k.startswith("module.sequence_cls_norm"):
-                sequence_only[k.replace("module.", "")] = v
+            
+            k = k.replace("module.", "") if k.startswith("module.") else k
+
+            if k.startswith("embedding_layer"):
+                sequence_only[k] = v
+            elif k.startswith("sequence_encoder"):
+                sequence_only[k] = v
+            elif k.startswith("sequence_cls_norm"):
+                sequence_only[k] = v
             else:
                 continue
     elif model_type.startswith("plm_baseline"):
         for k, v in ckpt["model_state_dict"].items():
-            if k.startswith("module.embedding_layer"):
-                sequence_only[k.replace("module.", "")] = v
-            elif k.startswith("module.encoder"):
-                sequence_only[k.replace("module.encoder", "sequence_encoder")] = v
-            elif k.startswith("module.sequence_cls_norm"):
-                sequence_only[k.replace("module.", "")] = v
+
+            k = k.replace("module.", "") if k.startswith("module.") else k
+
+            if k.startswith("embedding_layer"):
+                sequence_only[k] = v
+            elif k.startswith("encoder"):
+                sequence_only[k.replace("encoder", "sequence_encoder")] = v
+            elif k.startswith("sequence_cls_norm"):
+                sequence_only[k] = v
             else:
                 continue
     else:
