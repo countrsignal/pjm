@@ -31,7 +31,7 @@ def from_pretrained(
     embedder = Embedder(
         embedding_dim=model_args["embedding_dim"],
         alphabet=alphabet,
-        num_transformer_blocks=model_args["num_sequence_transformer_blocks"] if model_type == "pjm" else model_args["num_transformer_blocks"],
+        num_transformer_blocks=model_args["num_sequence_transformer_blocks"] if model_type.startswith("pjm") else model_args["num_transformer_blocks"],
         include_cls_norm=True,
         **transformer_config,
     )
