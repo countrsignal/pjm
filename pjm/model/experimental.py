@@ -127,14 +127,15 @@ class CoCa(nn.Module):
     self.sequence_encoder = nn.ModuleList(
         [Transformer(dim, **kwargs) for _ in range(num_transformer_blocks)]
     )
-    self.sequence_cls_norm = AttnLayerNorm(dim)
+    # self.sequence_cls_norm = AttnLayerNorm(dim)
 
     # Structure Encoder
     self.structure_encoder = structure_encoder
     self.sturcture_global_proj = nn.Sequential(
-      nn.Linear(dim, dim),
+      nn.Conv1d(in_channels=dim, out_channels=dim, kernel_size=14, stride=4, padding=7, dilation=3),
       nn.ReLU(),
-      nn.Linear(dim, dim)
+      nn.Dropout(0.1),
+      nn.Conv1d(in_channels=dim, out_channels=dim, kernel_size=7, stride=2, padding=7, dilation=1),
     )
 
     #################
@@ -159,7 +160,7 @@ class CoCa(nn.Module):
       # Send sequence encoder to device
       self.embedding_layer = self.embedding_layer.to(self.encoder_parallel_device)
       self.sequence_encoder = self.sequence_encoder.to(self.encoder_parallel_device)
-      self.sequence_cls_norm = self.sequence_cls_norm.to(self.encoder_parallel_device)
+      # self.sequence_cls_norm = self.sequence_cls_norm.to(self.encoder_parallel_device)
       # Send structure encoder to device
       self.structure_encoder = self.structure_encoder.to(self.encoder_parallel_device)
       self.sturcture_global_proj = self.sturcture_global_proj.to(self.encoder_parallel_device)
@@ -173,9 +174,10 @@ class CoCa(nn.Module):
     for attn_block in self.sequence_encoder:
       tokens = attn_block(x=tokens, attn_mask=attn_mask, ar_masking=False)
     
-    cls_tokens, tokens = tokens[:, -1], tokens[:, :-1]
-    seq_embeds = self.sequence_cls_norm(cls_tokens)
-    return seq_embeds, tokens
+    # cls_tokens, tokens = tokens[:, -1], tokens[:, :-1]
+    # seq_embeds = self.sequence_cls_norm(cls_tokens)
+    # return seq_embeds, tokens
+    return tokens
 
   def embed_structure(self, structures, attn_mask, gvp_node_masks):
     # Graph neural network
@@ -189,10 +191,10 @@ class CoCa(nn.Module):
     del(edge_feats)
 
     # Gloabl graph embeddings
-    with graph.local_scope():
-      graph.ndata['h'] = node_feats
-      graph_feats = dgl.mean_nodes(graph, 'h')
-    graph_feats = self.sturcture_global_proj(graph_feats)
+    # with graph.local_scope():
+    #   graph.ndata['h'] = node_feats
+    #   graph_feats = dgl.mean_nodes(graph, 'h')
+    # graph_feats = self.sturcture_global_proj(graph_feats)
 
     # Attention over node embeddings
     # > Reformat node embeddings
@@ -225,8 +227,11 @@ class CoCa(nn.Module):
     # > Multi-Head attention
     for attn_layer in self.structure_encoder[1:]:
       node_feats = attn_layer(node_feats, attn_mask=attn_mask, ar_masking=False)
+    # > Structure projection
+    proj = self.sturcture_global_proj(node_feats.permute(0, 2, 1)).permute(0, 2, 1)
 
-    return graph_feats, node_feats
+    # return graph_feats, node_feats
+    return proj, node_feats
 
   def forward(
       self,
@@ -308,7 +313,7 @@ class CoCa(nn.Module):
 
       # Sequence encoder attention mask
       # > Add [CLS] token to sequences
-      masked_sequences = F.pad(masked_sequences, (0, 1, 0, 0), value=self.cls_idx)
+      # masked_sequences = F.pad(masked_sequences, (0, 1, 0, 0), value=self.cls_idx)
       # > Mask out pad tokens for sequence data
       seq_enc_mask = get_attn_mask(
           masked_sequences,
@@ -318,11 +323,11 @@ class CoCa(nn.Module):
       )
 
     # Encode sequences and structures
-    seq_embs, seq_tokens = self.embed_sequence(
+    seq_tokens = self.embed_sequence(
       masked_sequences,
       attn_mask=seq_enc_mask,
     )
-    strc_embs, strc_tokens = self.embed_structure(
+    proj, strc_tokens = self.embed_structure(
       # structures,
       (graph, corrupted_node_feats, edge_feats) if self.structure_reconstruction else structures,
       attn_mask=seq_dec_mask,
@@ -331,12 +336,15 @@ class CoCa(nn.Module):
     )
 
     if return_embeddings:
-      return (seq_embs, seq_tokens), (strc_embs, strc_tokens)
+      # return (seq_embs, seq_tokens), (strc_embs, strc_tokens)
+      return seq_tokens, (proj, strc_tokens)
 
     # > Model Parallelism (Decoder on separate device)
     if self.decoder_parallel_device is not None:
-      seq_embs = seq_embs.to(self.decoder_parallel_device)
-      strc_embs = strc_embs.to(self.decoder_parallel_device)
+      # seq_embs = seq_embs.to(self.decoder_parallel_device)
+      # strc_embs = strc_embs.to(self.decoder_parallel_device)
+      proj = proj.to(self.decoder_parallel_device)
+      tokens_mask = tokens_mask.to(self.decoder_parallel_device)
       seq_tokens = seq_tokens.to(self.decoder_parallel_device)
       strc_tokens = strc_tokens.to(self.decoder_parallel_device)
       seq_dec_mask = seq_dec_mask.to(self.decoder_parallel_device)
@@ -345,7 +353,7 @@ class CoCa(nn.Module):
     # > sequence tokens are right shifted during auto-regressive training
     logits = self.decoder(
         x=seq_tokens,
-        y=strc_tokens,
+        y=proj,
         attn_mask=seq_dec_mask
     )
 
@@ -360,7 +368,7 @@ class CoCa(nn.Module):
     if self.training:
       cross_entropy_loss = cross_entropy_loss * self.cross_entropy_loss_weight
     # > contrastive loss
-    sim = einsum('i d, j d -> i j', seq_embs, strc_embs)
+    sim = einsum('i d, j d -> i j', seq_tokens[tokens_mask], strc_tokens[tokens_mask])
     sim = sim * self.temperature['temperature'].exp()
     contrastive_loss = InfoNCE_loss(sim)
     if self.training:

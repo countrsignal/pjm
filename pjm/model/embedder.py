@@ -19,25 +19,10 @@ def from_pretrained(
     ):
     assert (model_type.startswith("pjm") or model_type.startswith("plm_baseline")), f"Model type {model_type} not supported."
 
-    with open(model_config_path, "r") as f:
-        model_args = json.load(f)
-
-    transformer_config = {
-        "depth": model_args["transformer_block_depth"],
-        "heads": model_args["num_attns_heads"],
-        "head_dim": model_args["attn_head_dim"],
-        "dropout": model_args["dropout"],
-    }
-    embedder = Embedder(
-        embedding_dim=model_args["embedding_dim"],
-        alphabet=alphabet,
-        num_transformer_blocks=model_args["num_sequence_transformer_blocks"] if model_type.startswith("pjm") else model_args["num_transformer_blocks"],
-        include_cls_norm=True,
-        **transformer_config,
-    )
-
-    ckpt = torch.load(checkpoint_path, map_location=torch.device("cpu"))
+    ### Load model checkpoint and extract sequence-encoder-only weights
     sequence_only = {}
+    include_cls_norm = False
+    ckpt = torch.load(checkpoint_path, map_location=torch.device("cpu"))
     if model_type.startswith("pjm"):
         for k, v in ckpt["model_state_dict"].items():
             
@@ -49,6 +34,8 @@ def from_pretrained(
                 sequence_only[k] = v
             elif k.startswith("sequence_cls_norm"):
                 sequence_only[k] = v
+                if not include_cls_norm:
+                    include_cls_norm = True
             else:
                 continue
     elif model_type.startswith("plm_baseline"):
@@ -62,11 +49,31 @@ def from_pretrained(
                 sequence_only[k.replace("encoder", "sequence_encoder")] = v
             elif k.startswith("sequence_cls_norm"):
                 sequence_only[k] = v
+                if not include_cls_norm:
+                    include_cls_norm = True
             else:
                 continue
     else:
         raise NotImplementedError
     del(ckpt)
+
+    ### Load model config and initialize embedder
+    with open(model_config_path, "r") as f:
+        model_args = json.load(f)
+
+    transformer_config = {
+        "depth": model_args["transformer_block_depth"],
+        "heads": model_args["num_attns_heads"],
+        "head_dim": model_args["attn_head_dim"],
+        "dropout": model_args["dropout"],
+    }
+    embedder = Embedder(
+        embedding_dim=model_args["embedding_dim"],
+        alphabet=alphabet,
+        num_transformer_blocks=model_args["num_sequence_transformer_blocks"] if model_type.startswith("pjm") else model_args["num_transformer_blocks"],
+        include_cls_norm=include_cls_norm,
+        **transformer_config,
+    )
 
     embedder.load_state_dict(sequence_only, strict=True)
     return embedder

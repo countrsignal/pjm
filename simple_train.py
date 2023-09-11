@@ -50,7 +50,7 @@ def validate(args, model, val_loader):
                 n = (ns, nv)
                 structures = (g, n, e)
 
-            ct_loss, ce_loss, total = model(
+            *_, total = model(
                 sequences,
                 structures,
             )
@@ -58,12 +58,8 @@ def validate(args, model, val_loader):
                 logging.warning(f"Validation loss is NaN. Skipping...")
                 continue
             
-            ce_loss = ce_loss.detach().item()
-            ct_loss = ct_loss.detach().item()
-            ce_loss = ce_loss / model.cross_entropy_loss_weight
-            ct_loss = ct_loss / model.contrastive_loss_weight
-            total_adjusted = ce_loss + ct_loss
-            total_list.append(total_adjusted)
+            total = total.detach().item()
+            total_list.append(total)
     
     # Log validation metrics
     # > Calculate averages for logging

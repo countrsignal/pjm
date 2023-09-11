@@ -79,7 +79,10 @@ class StandardDecoderBlock(nn.Module):
     
     # Update unimodal representations
     x = unimod_x(x, attn_mask, ar_masking=False)
-    y = unimod_y(y, attn_mask, ar_masking=False)
+    if y.size(1) == x.size(1):
+      y = unimod_y(y, attn_mask, ar_masking=False)
+    else:
+      y = unimod_y(y, attn_mask=None, ar_masking=False)
 
     # Update multimodal representations
     x = cross_xy(x, context=y)
