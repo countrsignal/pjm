@@ -164,6 +164,7 @@ def main():
 
     model_args = json.load(open(args.model_config_path, "r"))
     if args.structure_test:
+        model_args["node_in_dims"][0] = 68
         model_args["node_in_dims"][1]  = 1
     model = load_jem(
 	devices=(0,1),
