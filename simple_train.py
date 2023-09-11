@@ -199,6 +199,11 @@ def main():
     log_step = 0
     best_val_loss = float("inf")
     total_adjusted = float("inf")
+    if args.structure_test:
+        bb_only = [0, 1, 2, 12, 13, 14]
+        for i in range(15, 77):
+            bb_only.append(i)
+        bb_only = torch.LongTensor(bb_only, device="cuda:0")
     with wandb.init(dir=".", project="joint embeddings", name="simple train", tags=args.tags, config=model_args):
         
         for epoch in range(args.num_epochs):
@@ -228,6 +233,7 @@ def main():
                     g, n, e = structures
                     ns, nv = n
                     nv = nv.mean(dim=-2, keepdim=True)
+                    ns = ns.index_select(dim=-1, index=bb_only)
                     n = (ns, nv)
                     structures = (g, n, e)
 
