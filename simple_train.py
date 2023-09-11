@@ -164,7 +164,7 @@ def main():
 
     model_args = json.load(open(args.model_config_path, "r"))
     if args.structure_test:
-        model_args["node_in_dims"][0] = 68
+        model_args["node_in_dims"][0] = 59
         model_args["node_in_dims"][1]  = 1
     model = load_jem(
 	devices=(0,1),
@@ -202,7 +202,7 @@ def main():
     total_adjusted = float("inf")
     if args.structure_test:
         bb_only = [0, 1, 2, 12, 13, 14]
-        for i in range(15, 77):
+        for i in range(24, 77):
             bb_only.append(i)
         bb_only = torch.LongTensor(bb_only, device="cuda:0")
     with wandb.init(dir=".", project="joint embeddings", name="simple train", tags=args.tags, config=model_args):
