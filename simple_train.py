@@ -17,6 +17,7 @@ from pjm.utils import Collator, Alphabet, AF2SCN
 
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
 
 
 def seed_everything(seed):
