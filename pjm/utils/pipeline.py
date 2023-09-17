@@ -26,6 +26,16 @@ import os
 __all__ = ['setup_ddp', 'cleanup', 'launch_ddp', 'Pipeline']
 
 
+_MM_LOSS_LOG_ = {
+    'contrastive': 'Contrastive Loss',
+    'cross entropy': 'Cross-Entropy Loss',
+    'edge scalars': 'Edge Scalars MSE',
+    'edge vectors': 'Edge Vectors MSE',
+    'edge mse': 'Edge MSE',
+    'total': 'Total Loss',
+}
+
+
 def setup_ddp(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '8888'
@@ -240,7 +250,7 @@ class Pipeline(object):
 
             # >> Forward pass
             if self.config.multimodal:
-                cont_loss, ce_loss, total_loss = model(
+                loss_dict = model(
                     sequences=sequences,
                     structures=structures,
                     return_embeddings=False,
@@ -251,6 +261,7 @@ class Pipeline(object):
 
         # Backward pass (under autocast is not recommended)
         if self.config.multimodal:
+            total_loss = loss_dict['total']
             total_loss.backward()
         else:
             ce_loss.backward()
@@ -262,6 +273,8 @@ class Pipeline(object):
             scheduler.step()
 
         if self.config.multimodal:
+            cont_loss = loss_dict['contrastive']
+            ce_loss = loss_dict['cross entropy']
             return [cont_loss.detach().cpu().item(), ce_loss.detach().cpu().item()]
         else:
             return [ce_loss.detach().cpu().item(),]
@@ -282,12 +295,13 @@ class Pipeline(object):
                 with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=self.config.bfloat16):
                     if self.config.multimodal:
                         sequences, *structures = batch.process_data(device)
-                        *_, total_loss = model.forward(
+                        loss_dict = model.forward(
                             sequences=sequences,
                             structures=structures,
                             return_embeddings=False,
                             return_loss=True
                             )
+                        total_loss = loss_dict['total']
                     else:
                         sequences = batch.seqs.to(device)
                         total_loss = model(sequences)

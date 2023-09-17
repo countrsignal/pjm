@@ -31,34 +31,46 @@ def seed_everything(seed):
     torch.backends.cudnn.benchmark = False
 
 
-def _check_sanity(loss):
+def _check_nan_sanity(loss):
     return (torch.isnan(loss) or torch.isinf(loss))
 
 
-def validate(args, model, val_loader):
+def validate(args, bb_only, model, val_loader):
     # Averages
     total_list = []
     # Validation loop
     model.eval()
     with torch.no_grad():
         for batch_index, batch in enumerate(val_loader):
-            sequences, *structures = batch.process_data(0)
+            if not args.sanity_check:
+                sequences, *structures = batch.process_data(0)
+                if args.structure_test:
+                    g, n, e = structures
+                    ns, nv = n
+                    nv = nv.mean(dim=-2, keepdim=True)
+                    ns = ns.index_select(dim=-1, index=bb_only)
+                    n = (ns, nv)
+                    structures = (g, n, e)
+            else:
+                sequences = batch.seqs.to("cuda:0")
+                structures = None
 
-            if args.structure_test:
-                g, n, e = structures
-                ns, nv = n
-                nv = nv.mean(dim=-2, keepdim=True)
-                n = (ns, nv)
-                structures = (g, n, e)
-
-            *_, total = model(
-                sequences,
-                structures,
-            )
-            if _check_sanity(total):
+            if (args.bf16) and (torch.cuda.is_bf16_supported()):
+                with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=True):
+                    loss_dict = model(
+                        sequences,
+                        structures,
+                    )
+            else:
+                loss_dict = model(
+                    sequences,
+                    structures,
+                )
+            if _check_nan_sanity(total):
                 logging.warning(f"Validation loss is NaN. Skipping...")
                 continue
             
+            total = loss_dict["total"]
             total = total.detach().item()
             total_list.append(total)
     
@@ -114,6 +126,8 @@ def parse():
     parser.add_argument("--bf16", action="store_true", help="Enable mixed precision training (for BFloat16 ONLY).")
     parser.add_argument("--fwd_test", action="store_true", help="Run a simple forward pass unit test.")
     parser.add_argument("--structure_test", action="store_true", help="Test whether the model is cheating counting padding dimensions.")
+    parser.add_argument("--sanity_check", action="store_true", help="Test the Joint Embeddings model code by training it as a PLM.")
+    parser.add_argument("--run_name", type=str, help="Name for the experiment.")
     return parser.parse_args()
 
 
@@ -126,12 +140,14 @@ def main():
 	"train",
 	max_len=args.max_len,
 	dataset_path=args.dataset_path,
+    _sequence_only_baseline=args.sanity_check,
 	_filter_by_plddt_coverage=None
     )
     val_ds = AF2SCN(
 	"val",
 	max_len=args.max_len,
 	dataset_path=args.dataset_path,
+    _sequence_only_baseline=args.sanity_check,
 	_filter_by_plddt_coverage=None
     )
 
@@ -163,13 +179,26 @@ def main():
         batch = next(iter(train_loader))
 
     model_args = json.load(open(args.model_config_path, "r"))
-    if args.structure_test:
-        model_args["node_in_dims"][0] = 59
-        model_args["node_in_dims"][1]  = 1
+    if not args.sanity_check:
+        if args.structure_test:
+            print("\nBackbone only model is selected!\n")
+            bb_only = [0, 1, 2, 12, 13, 14]
+            # for i in range(24, 77):
+            #     bb_only.append(i)
+            bb_only = torch.LongTensor(bb_only)
+            bb_only = bb_only.to("cuda:0")
+            model_args["node_in_dims"][0] = bb_only.shape[0]
+            model_args["node_in_dims"][1]  = 1
+        else:
+            bb_only = None
+    else:
+        bb_only = None
+
     model = load_jem(
 	devices=(0,1),
 	alphabet=alphabet,
-	model_args=model_args
+	model_args=model_args,
+    _sanity_check_mode_=args.sanity_check,
     )
 
     if args.load_from_chkpt:
@@ -200,13 +229,7 @@ def main():
     log_step = 0
     best_val_loss = float("inf")
     total_adjusted = float("inf")
-    if args.structure_test:
-        bb_only = [0, 1, 2, 12, 13, 14]
-        for i in range(24, 77):
-            bb_only.append(i)
-        bb_only = torch.LongTensor(bb_only)
-        bb_only = bb_only.to("cuda:0")
-    with wandb.init(dir=".", project="joint embeddings", name="simple train", tags=args.tags, config=model_args):
+    with wandb.init(dir=".", project="joint embeddings", name=args.run_name, tags=args.tags, config=model_args):
         
         for epoch in range(args.num_epochs):
             if (args.fwd_test):
@@ -229,22 +252,25 @@ def main():
                     if (epoch == 1):
                         break
 
-                sequences, *structures = batch.process_data(0)
-
-                if args.structure_test:
-                    g, n, e = structures
-                    ns, nv = n
-                    nv = nv.mean(dim=-2, keepdim=True)
-                    ns = ns.index_select(dim=-1, index=bb_only)
-                    n = (ns, nv)
-                    structures = (g, n, e)
+                if not args.sanity_check:
+                    sequences, *structures = batch.process_data(0)
+                    if args.structure_test:
+                        g, n, e = structures
+                        ns, nv = n
+                        nv = nv.mean(dim=-2, keepdim=True)
+                        ns = ns.index_select(dim=-1, index=bb_only)
+                        n = (ns, nv)
+                        structures = (g, n, e)
+                else:
+                    sequences = batch.seqs.to("cuda:0")
+                    structures = None
 
                 opt.zero_grad()
 
                 # Hunt for NaN's in the backward pass
                 if args.detect_anomaly:
                     with torch.autograd.detect_anomaly():
-                        ct_loss, ce_loss, total = model(
+                        loss_dict = model(
                             sequences,
                             structures,
                         )
@@ -252,7 +278,7 @@ def main():
                         
 #                        total = 0.
 #                        for loss_name, loss in [("Contrastive", ct_loss), ("Autoregressive", ce_loss)]:
-#                            if _check_sanity(loss):
+#                            if _check_nan_sanity(loss):
 #                                trigger = True
 #                                logging.warning(f"{loss_name} loss is NaN. Skipping...")
 #                                loss = loss.new_tensor(0., requires_grad=True)
@@ -275,14 +301,14 @@ def main():
  #                       else:
  #                           prev_batch_pdb_ids = batch.pids
                 else:
-                    if (args.bf16):
+                    if (args.bf16) and (torch.cuda.is_bf16_supported()):
                         with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=True):
-                            ct_loss, ce_loss, total = model(
+                            loss_dict = model(
                                 sequences,
                                 structures,
                             )
                     else:
-                        ct_loss, ce_loss, total = model(
+                        loss_dict = model(
                             sequences,
                             structures,
                         )
@@ -295,30 +321,44 @@ def main():
 
                 log_step += 1
                 if log_step % args.log_interval == 0:
+                    ce_loss = loss_dict["cross entropy"]
                     ce_loss = ce_loss.detach().item()
-                    ct_loss = ct_loss.detach().item()
-
                     ce_loss = ce_loss / model_args["cross_entropy_loss_weight"]
-                    ct_loss = ct_loss / model_args["contrastive_loss_weight"]
-                    total_adjusted = ce_loss + ct_loss
-
-                    wandb.log({
-                        "Cross-Entropy Loss": ce_loss,
-                        "Contrastive Loss": ct_loss,
-                        "Total Loss": total_adjusted,
-                    })
+                    
+                    if not args.sanity_check:
+                        ct_loss = loss_dict["contrastive"]
+                        ct_loss = ct_loss.detach().item()
+                        ct_loss = ct_loss / model_args["contrastive_loss_weight"]
+                        total_adjusted = ce_loss + ct_loss
+                        wandb.log({
+                            "Cross-Entropy Loss": ce_loss,
+                            "Contrastive Loss": ct_loss,
+                            "Total Loss": total_adjusted,
+                            "Learning Rate": opt.param_groups[0]["lr"],
+                        })
+                    else:
+                        total_adjusted = ce_loss
+                        wandb.log({
+                            "Cross-Entropy Loss": ce_loss,
+                            "Learning Rate": opt.param_groups[0]["lr"],
+                        })
                     
                     if log_step % args.val_interval == 0:
-                        avg_val_loss = validate(args, model, val_loader)
+                        avg_val_loss = validate(args, bb_only, model, val_loader)
 
                         if best_val_loss > avg_val_loss:
                             best_val_loss = avg_val_loss
                             checkpoint_state = {
                                     'model_state_dict': model.state_dict(),
+                                    'optimizer_state_dict': opt.state_dict(),
+                                    'lr_scheduler_state_dict': lr_scheduler.state_dict() if lr_scheduler else None,
                             }
+                            model_name = args.run_name.split("_")
+                            model_name.insert(-1, f"{epoch}epochs")
+                            model_name = "_".join(model_name)
                             torch.save(
                                     checkpoint_state,
-                                    os.path.join(args.model_chkpt_path, 'model_chkpt_simple_train.pth')
+                                    os.path.join(args.model_chkpt_path, f"{model_name}_ckpt.pth")
                             )
                     
                     progress_bar.set_description(f"Epoch {epoch + 1}: Train Loss ({total_adjusted}), Best Val Loss ({best_val_loss})")

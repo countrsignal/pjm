@@ -18,7 +18,7 @@ class BaselineDecoder(nn.Module):
                 ])
     self.stack.append(AttnLayerNorm(dim))
     self.stack.append(nn.Linear(dim, alphabet_size, bias=False))
-    nn.init.zeros_(self.stack[-1].weight)
+    # nn.init.zeros_(self.stack[-1].weight)
 
   def forward(self, x, attn_mask):
     for layer in self.stack[:-2]:
