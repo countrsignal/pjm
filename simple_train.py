@@ -274,6 +274,7 @@ def main():
                             sequences,
                             structures,
                         )
+                        total = loss_dict["total"]
                         total.backward()
                         
 #                        total = 0.
@@ -312,7 +313,7 @@ def main():
                             sequences,
                             structures,
                         )
-
+                    total = loss_dict["total"]
                     total.backward()
 
                 opt.step()
