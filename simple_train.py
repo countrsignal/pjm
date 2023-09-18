@@ -66,11 +66,12 @@ def validate(args, bb_only, model, val_loader):
                     sequences,
                     structures,
                 )
+            
+            total = loss_dict["total"]
             if _check_nan_sanity(total):
                 logging.warning(f"Validation loss is NaN. Skipping...")
                 continue
             
-            total = loss_dict["total"]
             total = total.detach().item()
             total_list.append(total)
     
