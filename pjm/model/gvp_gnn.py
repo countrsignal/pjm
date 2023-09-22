@@ -4,6 +4,11 @@ from esm.inverse_folding.util import rotate
 from esm.inverse_folding.gvp_modules import GVPConv, GVPConvLayer
 
 
+# Constants
+EDGE_RBF_CHANNELS=8
+NODE_ANGLE_CHANNELS=24
+
+
 class GeoEmbedding(nn.Module):
     def __init__(self, num_node_types, scalar_channels, vector_channels):
         super(GeoEmbedding, self).__init__()
