@@ -6,10 +6,11 @@ from einops import rearrange, repeat
 import functools
 from typing import Optional, NewType
 
-from .gvp_gnn import GVPGNN
+from .gvp_gnn import NODE_ANGLE_CHANNELS, GeoEmbedding, GVPGNN
 from .decoder import MultiModalDecoder, BaselineDecoder
 from .attention import Transformer, AttnLayerNorm, get_attn_mask
 from .masking import (
+    map_tokens_to_nodes,
     get_sequence_mask,
     apply_sequence_mask,
     apply_random_token_swap,
@@ -22,6 +23,7 @@ Alphabet = NewType('Alphabet', object)
 
 
 def standard_structure_module(
+    num_node_types: int,
     node_in_dims,
     node_out_dims,
     edge_in_dims,
@@ -38,15 +40,20 @@ def standard_structure_module(
 ):
   encoder = nn.ModuleList(
       [
-       GVPGNN(
-           node_in_dims,
-           node_out_dims,
-           edge_in_dims,
-           num_edge_gvps,
-           num_gvp_convs,
-           final_proj_dim,
-           **kwargs
-       )
+        GeoEmbedding(
+          num_node_types=num_node_types,
+          scalar_channels=node_in_dims[0] - NODE_ANGLE_CHANNELS,
+          vector_channels=node_in_dims[1],
+        ),
+        GVPGNN(
+          node_in_dims,
+          node_out_dims,
+          edge_in_dims,
+          num_edge_gvps,
+          num_gvp_convs,
+          final_proj_dim,
+          **kwargs
+        )
       ]
   )
   for _ in range(num_transformer_blocks):
@@ -207,7 +214,7 @@ class CoCa(nn.Module):
 
   def embed_structure(self, structures, attn_mask, gvp_node_masks):
     # Graph neural network
-    graph, node_feats, edge_feats = self.structure_encoder[0](*structures, gvp_node_masks=gvp_node_masks)
+    graph, node_feats, edge_feats = self.structure_encoder[1](*structures, gvp_node_masks=gvp_node_masks)
     # _, *vector_dims = node_feats[1].size()
     # vector_dims = functools.reduce(lambda i, j: i*j, vector_dims)
     # node_feats = torch.cat(
@@ -231,18 +238,19 @@ class CoCa(nn.Module):
       features = []
       for g in graph_list:
         n = g.num_nodes()
-        sos = torch.LongTensor([self.sos_idx]).to(node_feats.device)
-        eos = torch.LongTensor([self.eos_idx]).to(node_feats.device)
-        pad = torch.LongTensor([self.pad_idx]).to(node_feats.device)
+        # sos = torch.LongTensor([self.sos_idx]).to(node_feats.device)
+        # eos = torch.LongTensor([self.eos_idx]).to(node_feats.device)
+        # pad = torch.LongTensor([self.pad_idx]).to(node_feats.device)
+        zeros = torch.zeros((1, self.dim)).to(node_feats.device)
+        pad = repeat(zeros, '1 d -> i d', i=max_len-n)
         
-        pad = repeat(pad, '1 -> i', i=max_len-n)
         features.append(
             torch.cat(
                 [
-                    self.embedding_layer(sos),
+                    zeros,
                     g.ndata['x'],
-                    self.embedding_layer(eos),
-                    self.embedding_layer(pad)
+                    zeros,
+                    pad,
                 ],
                 dim=0
             ).unsqueeze(0)
@@ -251,7 +259,7 @@ class CoCa(nn.Module):
     node_feats = torch.cat(features, dim=0)
 
     # > Multi-Head attention
-    for attn_layer in self.structure_encoder[1:]:
+    for attn_layer in self.structure_encoder[2:]:
       node_feats = attn_layer(node_feats, attn_mask=attn_mask, ar_masking=False)
     # > Structure projection
     if self.sturcture_global_proj is not None:
@@ -273,6 +281,27 @@ class CoCa(nn.Module):
       ):
     
     device = sequences.device
+    ############################
+    ##   First get node geometric embeddings
+    ############################
+    if not self._sanity_check_mode_:
+      graph, node_scalars, edge_feats = structures
+      # > Get node types (same as sequence tokens but ignores padding, sos, & eos tokens)
+      # >> `node_types` will have shape (num_nodes, )
+      with torch.no_grad():
+        node_types, tokens2nodes = map_tokens_to_nodes(sequences, self.eos_idx, self.pad_idx)
+      # > Get node geometric embeddings
+      emb_s, emb_v = self.structure_encoder[0](node_types)
+      # > Concatenate scalar and vector components to node features
+      node_feats = (
+        torch.cat([node_scalars, emb_s], dim=-1),
+        emb_v,
+      )
+      structures = (graph, node_feats, edge_feats)
+
+    ############################
+    ##   Conduct masking and node corruption
+    ############################
     with torch.no_grad():
 
       # Separate the sequences to be masks from input sequences
@@ -352,7 +381,9 @@ class CoCa(nn.Module):
           include_cls_token=False,
       )
 
-    # Encode sequences and structures
+    ############################
+    ##   Encode sequences and structures
+    ############################
     seq_tokens = self.embed_sequence(
       masked_sequences,
       attn_mask=seq_enc_mask,
@@ -360,7 +391,6 @@ class CoCa(nn.Module):
     if not self._sanity_check_mode_:
       if self.corrupt_structure:
         proj, strc_tokens = self.embed_structure(
-          # structures,
           (graph, corrupted_node_feats, edge_feats),
           attn_mask=seq_dec_mask,
           # gvp_node_masks=gvp_node_masks,
@@ -380,6 +410,9 @@ class CoCa(nn.Module):
       # return (seq_embs, seq_tokens), (strc_embs, strc_tokens)
       return seq_tokens, (proj, strc_tokens)
 
+    ############################
+    ##   Decoding sequence and structure
+    ############################
     # > Model Parallelism (Decoder on separate device)
     if self.decoder_parallel_device is not None:
       # seq_embs = seq_embs.to(self.decoder_parallel_device)

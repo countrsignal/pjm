@@ -34,20 +34,30 @@ class Batch(object):
     def __repr__(self):
         return self.__str__()
 
-    def process_data(self, device):
+    def process_data(self, device, eps=1e-8):
         # Batch graphs
         graphs = dgl.batch(self.folds)
         
         # Unpack features
-        node_features = (graphs.ndata.pop('s'), graphs.ndata.pop('v'))
-        edge_features = (graphs.edata.pop('s'), graphs.edata.pop('v'))
+        node_scalars = graphs.ndata.pop('s')
+        node_vectors = graphs.ndata.pop('v')
+        n_dists = torch.linalg.norm(node_vectors, ord=2, dim=-1, keepdims=True)
+        graphs.ndata['v_targs'] = node_vectors / (n_dists + eps)
+        graphs.ndata['s_targs'] = node_scalars
+
+        edge_scalars = graphs.edata.pop('s')
+        edge_vectors = graphs.edata.pop('v')
+        e_dists = torch.linalg.norm(edge_vectors, ord=2, dim=-1, keepdims=True)
+        edge_vectors = edge_vectors / (e_dists + eps)
+        graphs.edata['v_targs'] = edge_vectors
+        graphs.edata['s_targs'] = edge_scalars
 
         # Route data to device
         sequences = self.seqs.to(device)
         graphs = graphs.to(device)
 
-        node_features = (node_features[0].to(device), node_features[1].to(device))
-        edge_features = (edge_features[0].to(device), edge_features[1].to(device))
+        node_scalars = node_scalars.to(device)
+        edge_features = (edge_scalars.to(device), edge_vectors.to(device))
 
         return sequences, graphs, node_features, edge_features
 
@@ -82,7 +92,9 @@ class AF2SCN(object):
         self.path = Path(dataset_path).absolute()
 
         # Load manifest file
-        self.manifest = json.load((self.path / 'manifest.json').open('r'))[self.split]
+        manifest_json = list(self.path.glob("*.json"))
+        assert len(manifest_json) == 1, f"Found {len(manifest_json)} manifest JSON files in {self.path}"
+        self.manifest = json.load(manifest_json[0].open('r'))[self.split]
 
         # > Filter out large proteins
         self.max_len = max_len

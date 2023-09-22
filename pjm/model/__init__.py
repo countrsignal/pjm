@@ -1,4 +1,4 @@
-from .gvp_gnn import GVPGNN
+from .gvp_gnn import GeoEmbedding, GVPGNN
 from .decoder import BaselineDecoder, CXDecoderBlock, StandardDecoderBlock, MultiModalDecoder
 from .attention import Transformer, CrossAttention, AttnLayerNorm, Residual, SwiGLU, get_attn_mask
 from .experimental import standard_structure_module, CoCa
