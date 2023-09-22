@@ -6,7 +6,9 @@ from esm.inverse_folding.gvp_modules import GVPConv, GVPConvLayer
 
 # Constants
 EDGE_RBF_CHANNELS=8
+EDGE_VECTOR_CHANNELS=2
 NODE_ANGLE_CHANNELS=24
+NODE_VECTOR_CHANNELS=13
 
 
 class GeoEmbedding(nn.Module):
