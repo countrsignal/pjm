@@ -59,7 +59,7 @@ class Batch(object):
         node_scalars = node_scalars.to(device)
         edge_features = (edge_scalars.to(device), edge_vectors.to(device))
 
-        return sequences, graphs, node_features, edge_features
+        return sequences, graphs, node_scalars, edge_features
 
 
 class Collator(object):
