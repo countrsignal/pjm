@@ -43,14 +43,14 @@ class Batch(object):
         node_vectors = graphs.ndata.pop('v')
         n_dists = torch.linalg.norm(node_vectors, ord=2, dim=-1, keepdims=True)
         graphs.ndata['v_targs'] = node_vectors / (n_dists + eps)
-        graphs.ndata['s_targs'] = node_scalars
+        graphs.ndata['s_targs'] = n_dists.squeeze(-1)
 
         edge_scalars = graphs.edata.pop('s')
         edge_vectors = graphs.edata.pop('v')
         e_dists = torch.linalg.norm(edge_vectors, ord=2, dim=-1, keepdims=True)
         edge_vectors = edge_vectors / (e_dists + eps)
         graphs.edata['v_targs'] = edge_vectors
-        graphs.edata['s_targs'] = edge_scalars
+        graphs.edata['s_targs'] = e_dists.squeeze(-1)
 
         # Route data to device
         sequences = self.seqs.to(device)
