@@ -12,6 +12,12 @@ __all__ = [
 ]
 
 
+def map_tokens_to_nodes(sequences, eos_index, padding_index):
+    tokens2nodes = torch.not_equal(sequences[:, 1:], eos_index) * torch.not_equal(sequences[:, 1:], padding_index)
+    node_types = sequences[:, 1:][tokens2nodes].detach().clone()
+    return node_types, tokens2nodes
+
+
 def highlight_mask(sequences, token_ids):
     mask_init = torch.full_like(sequences, False, dtype=torch.bool)
     mask = functools.reduce(lambda acc, el: acc | (sequences == el), token_ids, mask_init)
@@ -62,7 +68,7 @@ def get_structure_mask(sequences, sequence_mask, eos_index):
         amino acid features in the structure graphs.
     """
     # NOTE: The batch node features are of shape (batch_size * num_nodes, num_features)
-    #       The sequence mask is of shape (batch_size, seq_len_of_longest_protein)
+    #       The sequence mask is of shape (batch_size, len_of_longest_protein)
     #       This means that the node features have no padding dimensions
     #       Therefore we need to exclude the padding dims from the mask tensor
 
