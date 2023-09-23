@@ -6,7 +6,7 @@ from einops import rearrange, repeat
 import functools
 from typing import Optional, NewType
 
-from .gvp_gnn import NODE_ANGLE_CHANNELS, GeoEmbedding, GVPGNN
+from .gvp_gnn import NODE_ANGLE_CHANNELS, GVPGNN
 from .decoder import MultiModalDecoder, BaselineDecoder
 from .attention import Transformer, AttnLayerNorm, get_attn_mask
 from .masking import (
@@ -23,7 +23,6 @@ Alphabet = NewType('Alphabet', object)
 
 
 def standard_structure_module(
-    num_node_types: int,
     node_in_dims,
     node_out_dims,
     edge_in_dims,
@@ -40,11 +39,6 @@ def standard_structure_module(
 ):
   encoder = nn.ModuleList(
       [
-        GeoEmbedding(
-          num_node_types=num_node_types,
-          scalar_channels=node_in_dims[0] - NODE_ANGLE_CHANNELS,
-          vector_channels=node_in_dims[1],
-        ),
         GVPGNN(
           node_in_dims,
           node_out_dims,

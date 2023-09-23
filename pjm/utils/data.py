@@ -42,7 +42,8 @@ class Batch(object):
         node_scalars = graphs.ndata.pop('s')
         node_vectors = graphs.ndata.pop('v')
         n_dists = torch.linalg.norm(node_vectors, ord=2, dim=-1, keepdims=True)
-        graphs.ndata['v_targs'] = node_vectors / (n_dists + eps)
+        node_vectors = node_vectors / (n_dists + eps)
+        graphs.ndata['v_targs'] = node_vectors
         graphs.ndata['s_targs'] = n_dists.squeeze(-1)
 
         edge_scalars = graphs.edata.pop('s')
@@ -56,10 +57,10 @@ class Batch(object):
         sequences = self.seqs.to(device)
         graphs = graphs.to(device)
 
-        node_scalars = node_scalars.to(device)
+        node_features = (node_scalars.to(device), node_vectors.to(device))
         edge_features = (edge_scalars.to(device), edge_vectors.to(device))
 
-        return sequences, graphs, node_scalars, edge_features
+        return sequences, graphs, node_features, edge_features
 
 
 class Collator(object):
