@@ -246,7 +246,7 @@ def write_to_logger(runner, log_dict):
 def validation_step_hook(multi_modal, val_loader, model, *args, **kwargs):
     # Average loss across all batches
     if multi_modal:
-        validation_loss = {l: [] for l in _MM_LOSS_LOG_[1:]}
+        validation_loss = {"Val " + l: [] for l in _MM_LOSS_LOG_[1:]}
         validation_loss["Validation Loss"] = []
     else:
         validation_loss = {"Validation Loss": []}
