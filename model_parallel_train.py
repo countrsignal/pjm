@@ -62,7 +62,7 @@ def main():
                 log_dict = logging_hook(args.multi_modal, losses, lr_scheduler)
                 write_to_logger(run, log_dict)
                 # Update progress bar
-                prev_train_loss = losses["Training Loss"] if args.multi_modal else losses["Masked Residue Loss"]
+                prev_train_loss = log_dict["Training Loss"] if args.multi_modal else log_dict["Masked Residue Loss"]
                 progress_bar.set_description(f"Epoch {epoch_index + 1} | Training Step Loss {prev_train_loss:.4f} | Best Validation Loss {best_val_loss:.4f}")
 
                 # Validation
