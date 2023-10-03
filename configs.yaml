@@ -102,6 +102,6 @@ optimizer:
   learning_rate: 0.0001
   lr_scheduler:
     t_total: 700000
-    warm_up: 100000
+    warmup_steps: 100000
   type: adamw
   weight_decay: 0.1
