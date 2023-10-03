@@ -1,0 +1,109 @@
+model:
+  baseline:
+    architecture:
+      attn_head_dim: 256
+      dropout: 0.1
+      embedding_dim: 256
+      num_attn_layers: 8
+      num_attns_heads: 12
+    data:
+      collate: {}
+      loader:
+        batch_size: 32
+        num_workers: 0
+        prefetch_factor: 1000
+      train_dataset:
+        _filter_by_plddt_coverage: null
+        _sequence_only_baseline: true
+        dataset_path: /scr/dap181/dataset/
+        max_len: 500
+        split: train
+      val_dataset:
+        _filter_by_plddt_coverage: null
+        _sequence_only_baseline: true
+        dataset_path: /scr/dap181/dataset/
+        max_len: 1022
+        split: val
+  mmplm:
+    architecture:
+      decoder:
+        dim: 256
+        dropout: 0.1
+        head_dim: 256
+        heads: 12
+      denoiser:
+        ang_channels: 12
+        edge_in:
+        - 20
+        - 2
+        node_in:
+        - 178
+        - 26
+        node_out:
+        - 76
+        - 13
+        rbf_channels: 52
+      disto:
+        dim: 178
+        dropout: 0.1
+        num_classes: 65
+        num_heads: 128
+      sequence:
+        dim: 256
+        dropout: 0.1
+        head_dim: 256
+        heads: 12
+        num_attn_layers: 8
+      structure:
+        attn_head_dim: 256
+        dropout: 0.1
+        edge_in:
+        - 20
+        - 2
+        node_in:
+        - 76
+        - 13
+        node_out:
+        - 178
+        - 26
+        num_attn_heads: 12
+        num_attn_layers: 5
+        num_edge_convs: 1
+        num_node_convs: 3
+        proj_dim: 256
+    data:
+      collate:
+        distogram:
+          num_bins: 64
+          range:
+          - 2.0
+          - 22.0
+        edges:
+          rbf_channels: 4
+        nodes:
+          rbf_channels: 4
+        unpack:
+          eps: 1.0e-06
+      loader:
+        batch_size: 32
+        num_workers: 0
+        prefetch_factor: 1000
+      train_dataset:
+        _filter_by_plddt_coverage: null
+        _sequence_only_baseline: false
+        dataset_path: /scr/dap181/dataset/
+        max_len: 500
+        split: train
+      val_dataset:
+        _filter_by_plddt_coverage: null
+        _sequence_only_baseline: false
+        dataset_path: /scr/dap181/dataset/
+        max_len: 1022
+        split: val
+optimizer:
+  learning_rate: 0.0001
+  lr_scheduler:
+    t_total: 700000
+    warm_up: 100000
+  type: adamw
+  weight_decay: 0.1

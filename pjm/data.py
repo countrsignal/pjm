@@ -177,39 +177,44 @@ class Batch(object):
         return self.__str__()
 
     @torch.no_grad()
-    def process_data(self, device):
-        # Batch graphs
-        graphs = dgl.batch(self.folds)
-        
-        # Unpack structure data
-        graphs, node_features, edge_features = unpack_structure_data(
-            graphs,
-            **self.specs["unpack"],
-        )
-
-        # Featurize node and edge data
-        graphs, node_features, edge_features = nfeaturize(
-            (graphs, node_features, edge_features),
-            **self.specs["nodes"],
-        )
-        graphs, node_features, edge_features = efeaturize(
-            (graphs, node_features, edge_features),
-            **self.specs["edges"],
-        )
-        ca_labels, cb_labels = generate_distogram(
-            graphs.edata['s_targs'],
-            **self.specs["distogram"],
-        )
-        graphs.edata['ca_labels'] = ca_labels
-        graphs.edata['cb_labels'] = cb_labels
-
-        # Route data to device
+    def process_data(self, device, multi_modal=True):
+        # Route sequence data to device
         sequences = self.seqs.to(device)
-        graphs = graphs.to(device)
-        node_features = rdispatch(node_features, device)
-        edge_features = rdispatch(edge_features, device)
 
-        return sequences, graphs, node_features, edge_features
+        if multi_modal:
+            # Batch graphs
+            graphs = dgl.batch(self.folds)
+            
+            # Unpack structure data
+            graphs, node_features, edge_features = unpack_structure_data(
+                graphs,
+                **self.specs["unpack"],
+            )
+
+            # Featurize node and edge data
+            graphs, node_features, edge_features = nfeaturize(
+                (graphs, node_features, edge_features),
+                **self.specs["nodes"],
+            )
+            graphs, node_features, edge_features = efeaturize(
+                (graphs, node_features, edge_features),
+                **self.specs["edges"],
+            )
+            ca_labels, cb_labels = generate_distogram(
+                graphs.edata['s_targs'],
+                **self.specs["distogram"],
+            )
+            graphs.edata['ca_labels'] = ca_labels
+            graphs.edata['cb_labels'] = cb_labels
+
+            # Route data to device
+            graphs = graphs.to(device)
+            node_features = rdispatch(node_features, device)
+            edge_features = rdispatch(edge_features, device)
+
+            return sequences, graphs, node_features, edge_features
+        else:
+            return sequences, None, None, None
 
 
 class Collator(object):

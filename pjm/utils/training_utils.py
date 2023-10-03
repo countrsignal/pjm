@@ -55,13 +55,16 @@ def seed_everything(seed):
 
 def training_parser():
     parser = ArgumentParser()
+    parser.add_argument("--seed", type=int, help="Set the random seed.")
     parser.add_argument("--config_path", type=str, help="Set path to config file.")
-    parser.add_argument("--dataset_path", type=str, help="Set path to pre-computed data.")
+    parser.add_argument("--gpu_devices", nargs="+", help="Set devices to use for training.")
     parser.add_argument("--multi_modal", action="store_true", help="Set to train multi-modal model.")
+    parser.add_argument("--epochs", type=int, help="Set number of epochs to train.")
     parser.add_argument("--log_interval", type=int, default=200, help="Set logging frequency.")
     parser.add_argument("--val_interval", type=int, default=2000, help="Set logging frequency.")
     parser.add_argument("--run_name", type=str, help="Name for the experiment.")
     parser.add_argument("--tags", nargs="+", help="W&B run tags.")
+    parser.add_argument("--debug", action="store_true", help="Set to aid in debugging.")
     parser.add_argument("--detect_anomaly", action="store_true", help="Set to aid in debugging.")
     return parser.parse_args()
 
@@ -133,7 +136,7 @@ def build_default_alphabet():
     )
 
 
-def multimodal_assembler(config_path: str):
+def assembler(config_path: str, multi_modal: bool = True):
     # Load config yaml
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
@@ -141,25 +144,27 @@ def multimodal_assembler(config_path: str):
     # Load alphabet
     alphabet = build_default_alphabet()
     # Initialize collator
-    collate_fn = Collator(config=config['data']['collate'], tokenizer=alphabet.get_batch_converter())
+    model_type = "mmplm" if multi_modal else "baseline"
+    collate_fn = Collator(config=config['model'][model_type]['data']['collate'], tokenizer=alphabet.get_batch_converter())
     # Initialize traingin and validation dataloaders
     train_loader = DataLoader(
-        dataset=AF2SCN(**config['data']['train_dataset']),
+        dataset=AF2SCN(**config['model'][model_type]['data']['train_dataset']),
         collate_fn=collate_fn,
         shuffle=True,
-        **config['data']['loader']
+        **config['model'][model_type]['data']['loader']
     )
     val_loader = DataLoader(
-        dataset=AF2SCN(**config['data']['val_dataset']),
+        dataset=AF2SCN(**config['model'][model_type]['data']['val_dataset']),
         collate_fn=collate_fn,
         shuffle=False,
-        **config['data']['loader']
+        **config['model'][model_type]['data']['loader']
     )
 
     # Initialize model
-    model = MMPLM(
-        config=config['model'],
+    model = build_model(
+        config=config['model'][model_type]['architecture'],
         alphabet=alphabet,
+        multi_modal=multi_modal,
     )
     return config, train_loader, val_loader, model
 
@@ -223,11 +228,11 @@ def init_progress_bar(epoch_index, train_loss, val_loss, log_interval, train_loa
     )
 
 
-def init_runner(run_name, config, tags):
+def init_runner(run_name, tags, config):
     runner = wandb.init(
         dir-".",
         name=run_name,
-        project="joint-embeddings",
+        project="protein-language-modeling",
         tags=tags,
         config=config,
     )
@@ -248,11 +253,19 @@ def validation_step_hook(multi_modal, val_loader, model, *args, **kwargs):
     # Enter evaluation mode
     model.eval()
     # Identify model device
-    device = next(model.parameters()).device if model.decoder_parallel_device is None else model.decoder_parallel_device
+    if multi_modal:
+        # NOTE: for multi-modal PLM, sequences AND structures are sent to decoder module first
+        input_device = model.decoder_parallel_device
+    else:
+        # NOTE: for baseline PLM, sequences are sent to encoder module first
+        input_device = model.encoder_parallel_device
     for batch_index, batch in enumerate(val_loader):
-        seuqence, *structure = batch.process_data(device)
+        seuqence, *structure = batch.process_data(input_device)
         with torch.no_grad():
-            losses = forward_pass_hook(model, seuqence, structure, *args, **kwargs)
+            if multi_modal:
+                losses = forward_pass_hook(True, model, seuqence, structure, *args, **kwargs)
+            else:
+                losses = forward_pass_hook(False, model, seuqence, *args, **kwargs)
         if multi_modal:
             for idx, l in enumerate(losses):
                 if idx == 0:
