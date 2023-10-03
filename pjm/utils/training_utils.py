@@ -120,7 +120,7 @@ def build_optimizer(model, config):
     else:
         raise NotImplementedError(f"Optimizer {config['optimizer']['type']} not recognized.")
     if config["optimizer"]["lr_scheduler"] is not None:
-        lr_scheduler = WarmupLinearSchedule(optimizer=opt, **config[["optimizer"]]["lr_scheduler"])
+        lr_scheduler = WarmupLinearSchedule(optimizer=opt, **config["optimizer"]["lr_scheduler"])
     else:
         lr_scheduler = None
     return opt, lr_scheduler
