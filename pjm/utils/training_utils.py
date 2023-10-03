@@ -164,15 +164,21 @@ def multimodal_assembler(config_path: str):
     return config, train_loader, val_loader, model
 
 
-def forward_pass_hook(model, *args, **kwargs):
+def forward_pass_hook(multi_modal, model, *args, **kwargs):
     if torch.cuda.is_bf16_supported():
         with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=True):
             losses = model(*args, **kwargs)
-            total_loss = sum(losses) if len(losses) > 1 else losses[0]
+            if multi_modal:
+                total_loss = sum(losses)
     else:
         losses = model(*args, **kwargs)
-        total_loss = sum(losses)  if len(losses) > 1 else losses[0]
-    return total_loss, *losses
+        if multi_modal:
+            total_loss = sum(losses)
+    
+    if multi_modal:
+        return total_loss, *losses
+    else:
+        return (losses, )
 
 
 def backward_pass_hook(loss, optimizer, scheduler):
@@ -184,13 +190,13 @@ def backward_pass_hook(loss, optimizer, scheduler):
         scheduler.step()
 
 
-def training_step_hook(debug, model, optimizer, scheduler, *args, **kwargs):
+def training_step_hook(debug, multi_modal, model, optimizer, scheduler, *args, **kwargs):
     if debug:
         with torch.autograd.detect_anomaly():
-            losses = forward_pass_hook(model, *args, **kwargs)
+            losses = forward_pass_hook(multi_modal, model, *args, **kwargs)
             backward_pass_hook(losses[0], optimizer, scheduler)
     else:
-        losses = forward_pass_hook(model, *args, **kwargs)
+        losses = forward_pass_hook(multi_modal, model, *args, **kwargs)
         backward_pass_hook(losses[0], optimizer, scheduler)
     return losses
 
@@ -201,7 +207,7 @@ def logging_hook(multi_modal, losses, lr_scheduler):
         for idx, l, in enumerate(losses):
             log_dict[_MM_LOSS_LOG_[idx]] = l.detach().cpu().item()
     else:
-        log_dict["Training Loss"] = losses[0].detach().cpu().item()
+        log_dict["Masked Residue Loss"] = losses.detach().cpu().item()
     
     if lr_scheduler is not None:
         log_dict["Learning Rate"] = lr_scheduler.get_last_lr()[0]
@@ -254,7 +260,7 @@ def validation_step_hook(multi_modal, val_loader, model, *args, **kwargs):
                 else:
                     validation_loss[_MM_LOSS_LOG_[idx]].append(l.detach().cpu().item())
         else:
-            validation_loss["Validation Loss"].append(losses[0].detach().cpu().item())
+            validation_loss["Validation Loss"].append(losses.detach().cpu().item())
     # Return model to training mode
     model.train()
     # Return average loss across all batches

@@ -180,4 +180,4 @@ class BaselineModel(nn.Module):
         logits = rearrange(logits, 'b n c -> b c n')
         cross_entropy_loss = ce(logits, decoder_labels, ignore_index=self.pad_idx)
 
-        return (cross_entropy_loss, )
+        return cross_entropy_loss
