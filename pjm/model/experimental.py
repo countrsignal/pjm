@@ -6,7 +6,6 @@ from einops import rearrange, repeat
 import functools
 from typing import Optional, NewType
 
-from .gvp_gnn import NODE_ANGLE_CHANNELS, GVPGNN
 from .decoder import MultiModalDecoder, BaselineDecoder
 from .attention import Transformer, AttnLayerNorm, get_attn_mask
 from .masking import (
@@ -20,48 +19,6 @@ from .masking import (
 
 
 Alphabet = NewType('Alphabet', object)
-
-
-def standard_structure_module(
-    node_in_dims,
-    node_out_dims,
-    edge_in_dims,
-    num_edge_gvps: int,
-    num_gvp_convs: int,
-    final_proj_dim: int,
-    num_transformer_blocks: int,
-    transformer_input_dim: int,
-    transformer_block_depth: int,
-    num_attns_heads: int,
-    attn_head_dim: int,
-    dropout=0.1,
-    **kwargs
-):
-  encoder = nn.ModuleList(
-      [
-        GVPGNN(
-          node_in_dims,
-          node_out_dims,
-          edge_in_dims,
-          num_edge_gvps,
-          num_gvp_convs,
-          final_proj_dim,
-          **kwargs
-        )
-      ]
-  )
-  for _ in range(num_transformer_blocks):
-    encoder.append(
-        Transformer(
-            dim=transformer_input_dim,
-            depth=transformer_block_depth,
-            heads=num_attns_heads,
-            head_dim=attn_head_dim,
-            dropout=dropout,
-        )
-    )
-
-  return encoder
 
 
 def contrastive_loss(logits, dim):

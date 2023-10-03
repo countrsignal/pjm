@@ -1,1 +1,1 @@
-{"embedding_dim": 256, "transformer_block_depth": 1, "num_transformer_blocks": 8, "num_attns_heads": 8, "attn_head_dim": 256, "dropout": 0.1, "lr": 0.0001, "weight_decay": 0.01, "lr_scheduler": {"warmup_steps": 100000, "t_total": 700000}}
+{"embedding_dim": 256, "num_attn_layers": 8, "num_attns_heads": 8, "attn_head_dim": 256, "dropout": 0.1, "lr": 0.0001, "weight_decay": 0.01, "lr_scheduler": {"warmup_steps": 100000, "t_total": 700000}}

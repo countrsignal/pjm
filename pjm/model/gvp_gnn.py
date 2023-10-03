@@ -3,46 +3,47 @@ from torch import nn
 from esm.inverse_folding.util import rotate
 from esm.inverse_folding.gvp_modules import GVPConv, GVPConvLayer
 
-
-# Constants
-EDGE_RBF_CHANNELS=8
-EDGE_VECTOR_CHANNELS=2
-NODE_ANGLE_CHANNELS=24
-NODE_VECTOR_CHANNELS=13
+from .attention import Transformer
 
 
-class GeoEmbedding(nn.Module):
-    def __init__(self, num_node_types, scalar_channels, vector_channels):
-        super(GeoEmbedding, self).__init__()
-        
-        self.ns = scalar_channels
-        self.nv = vector_channels
-        self.num_node_types = num_node_types
-
-        d_v = vector_channels * 3
-        self.scalars = nn.Embedding(
-            num_node_types,
-            self.ns,
-            padding_idx=-1,
-            max_norm=1,
-            norm_type=2.0,
-            scale_grad_by_freq=False,
-            sparse=False,
+def standard_structure_module(
+    node_in_dims,
+    node_out_dims,
+    edge_in_dims,
+    num_edge_gvps: int,
+    num_gvp_convs: int,
+    embedding_dim: int,
+    num_attn_layers: int,
+    num_attn_heads: int,
+    attn_head_dim: int,
+    dropout=0.1,
+    **kwargs
+):
+  encoder = nn.ModuleList(
+      [
+        GVPGNN(
+          node_in_dims,
+          node_out_dims,
+          edge_in_dims,
+          num_edge_gvps,
+          num_gvp_convs,
+          embedding_dim,
+          **kwargs
         )
-        self.vectors = nn.Embedding(
-            num_node_types,
-            d_v,
-            padding_idx=-1,
-            max_norm=1,
-            norm_type=2.0,
-            scale_grad_by_freq=False,
-            sparse=False,
+      ]
+  )
+  for _ in range(num_attn_layers):
+    encoder.append(
+        Transformer(
+            dim=embedding_dim,
+            depth=1,
+            heads=num_attn_heads,
+            head_dim=attn_head_dim,
+            dropout=dropout,
         )
+    )
 
-    def forward(self, node_types):
-        scalars = self.scalars(node_types)
-        vectors = self.vectors(node_types)
-        return scalars, vectors.reshape(-1, self.nv, 3)
+  return encoder
 
 
 class GVPGNN(nn.Module):

@@ -1,136 +1,35 @@
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data.distributed import DistributedSampler
-from torch.optim.lr_scheduler import LambdaLR
-from torch.utils.data import DataLoader
-import torch.multiprocessing as mp
-import torch.distributed as dist
 import torch
+from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 import wandb
 from pytorch_lightning import seed_everything
 
-from .training_utils import UnitTest, _setup_logger, load_jem
+from ..tokenizer import Alphabet
+from ..data import  Collator, AF2SCN
 from ..model.baseline import BaselineModel
-from .data import  Collator, AF2SCN
-from .tokenizer import Alphabet
+from .training_utils import (
+    WarmupLinearSchedule,
+    EarlyStopping,
+    UnitTest,
+    setup_ddp,
+    cleanup,
+    _unit_test_enabled,
+    _early_stop_enabled,
+    load_jem,
+    _MM_LOSS_LOG_,
+)
 
 
 from multiprocessing import current_process
 from datetime import datetime
 from typing import Any, Optional
 from tqdm import tqdm
-import logging
 import os
 
 
-__all__ = ['setup_ddp', 'cleanup', 'launch_ddp', 'Pipeline']
-
-
-_MM_LOSS_LOG_ = {
-    'contrastive': 'Contrastive Loss',
-    'cross entropy': 'Cross-Entropy Loss',
-    'edge scalars': 'Edge Scalars MSE',
-    'edge vectors': 'Edge Vectors MSE',
-    'edge mse': 'Edge MSE',
-    'total': 'Total Loss',
-}
-
-
-def setup_ddp(rank, world_size):
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '8888'
-    dist.init_process_group('gloo', rank=rank, world_size=world_size)
-
-
-def cleanup():
-    dist.destroy_process_group()
-
-
-def launch_ddp(training_fn, world_size, model_args, dataloader_args, unit_test_callback, early_stop_callback):
-    mp.spawn(training_fn,
-             args=(world_size, model_args, dataloader_args, unit_test_callback, early_stop_callback),
-             nprocs=world_size,
-             join=True)
-
-
-def _unit_test_enabled(unit_test):
-    return issubclass(unit_test.__class__, UnitTest)
-
-
-class EarlyStopping(object):
-    def __init__(self, patience: int = 5, reduce_factor: float = 0.005, reduce_ratio: float = 0.5):
-        self.patience = patience
-        self.counter = 0
-        self.early_stop = False
-        self.reduce_factor = reduce_factor
-        self.reduce_ratio = reduce_ratio
-        self.logger = _setup_logger(logger_name=str(self), log_level=logging.INFO)
-    
-    def __str__(self):
-        status = "IN-PROGRESS" if not self.early_stop else "STOPPED"
-        return f"EarlyStopping(patience={self.patience}, counter={self.counter}, status={status})"
-    
-    def __repr__(self):
-        return self.__str__()
-    
-    def msg(self, message: str):
-        process_name = current_process().name
-        if (process_name == 'MainProcess') or (process_name == 'SpawnProcess-1'):
-            self.logger.info(message)
-
-    def get_early_stop_dataset(self, dataset: AF2SCN) -> AF2SCN:
-        if self.counter < self.patience:
-            self.counter += 1
-            num_examples = int(len(dataset) * self.reduce_factor)
-            amount = int(num_examples / self.reduce_ratio)
-            new_manifest = {}
-            af2_count, scn_count = 0, 0
-            for k, v in dataset.manifest.items():
-                if k.split('-')[0] == 'AF':
-                    if af2_count < amount:
-                        new_manifest[k] = v
-                        af2_count += 1
-                    else:
-                        continue
-                else:
-                    if scn_count < amount:
-                        new_manifest[k] = v
-                        scn_count += 1
-                    else:
-                        continue
-            dataset._overwrite_manifest(new_manifest=new_manifest)
-        else:
-            self.early_stop = True
-        
-        return dataset
-    
-    def update_optimizer(self, optimizer: torch.optim.Optimizer):
-        if self.early_stop:
-            optimizer.param_groups[0]['weight_decay'] = 0.0
-            self.msg(f"Setting weight decay to 0.0")
-
-
-def _early_stop_enabled(early_stop):
-    return issubclass(early_stop.__class__, EarlyStopping)
-
-
-class WarmupLinearSchedule(LambdaLR):
-    """ Linear warmup and then linear decay.
-        Linearly increases learning rate from 0 to 1 over `warmup_steps` training steps.
-        Linearly decreases learning rate from 1. to 0. over remaining `t_total - warmup_steps`
-        steps.
-    """
-    def __init__(self, optimizer, warmup_steps, t_total, last_epoch=-1):
-        self.warmup_steps = warmup_steps
-        self.t_total = t_total
-        super(WarmupLinearSchedule, self).__init__(
-            optimizer, self.lr_lambda, last_epoch=last_epoch)
-
-    def lr_lambda(self, step):
-        if step < self.warmup_steps:
-            return float(step) / float(max(1, self.warmup_steps))
-        return max(0.0, float(self.t_total - step) / float(
-            max(1.0, self.t_total - self.warmup_steps)))
+__all__ = ['Pipeline']
 
 
 class Pipeline(object):
@@ -250,7 +149,7 @@ class Pipeline(object):
 
             # >> Forward pass
             if self.config.multimodal:
-                loss_dict = model(
+                losses = model(
                     sequences=sequences,
                     structures=structures,
                     return_embeddings=False,
@@ -261,7 +160,7 @@ class Pipeline(object):
 
         # Backward pass (under autocast is not recommended)
         if self.config.multimodal:
-            total_loss = loss_dict['total']
+            total_loss = losses[0]
             total_loss.backward()
         else:
             ce_loss.backward()
@@ -273,9 +172,7 @@ class Pipeline(object):
             scheduler.step()
 
         if self.config.multimodal:
-            cont_loss = loss_dict['contrastive']
-            ce_loss = loss_dict['cross entropy']
-            return [cont_loss.detach().cpu().item(), ce_loss.detach().cpu().item()]
+            return [l.detach().cpu().item() for l in losses]
         else:
             return [ce_loss.detach().cpu().item(),]
 
@@ -295,13 +192,11 @@ class Pipeline(object):
                 with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=self.config.bfloat16):
                     if self.config.multimodal:
                         sequences, *structures = batch.process_data(device)
-                        loss_dict = model.forward(
+                        losses = model.forward(
                             sequences=sequences,
                             structures=structures,
-                            return_embeddings=False,
-                            return_loss=True
                             )
-                        total_loss = loss_dict['total']
+                        total_loss = losses[0]
                     else:
                         sequences = batch.seqs.to(device)
                         total_loss = model(sequences)
@@ -384,7 +279,6 @@ class Pipeline(object):
                         print('Trainable Params: ', sum(p.numel() for p in model.parameters() if p.requires_grad))
                 else:
                     transformer_config = {
-                        "depth": model_args["transformer_block_depth"],
                         "heads": model_args["num_attns_heads"],
                         "head_dim": model_args["attn_head_dim"],
                         "dropout": model_args["dropout"],
@@ -392,7 +286,7 @@ class Pipeline(object):
                     model = BaselineModel(
                         dim=model_args["embedding_dim"],
                         alphabet=self.alphabet,
-                        num_transformer_blocks=model_args["num_transformer_blocks"],
+                        num_attn_layers=model_args["num_attn_layers"],
                         encoder_parallel_device=dev0,
                         decoder_parallel_device=dev1,
                         **transformer_config,
@@ -485,7 +379,6 @@ class Pipeline(object):
                     model = load_jem((dev0, dev1), self.alphabet, model_args)
                 else:
                     transformer_config = {
-                        "depth": model_args["transformer_block_depth"],
                         "heads": model_args["num_attns_heads"],
                         "head_dim": model_args["attn_head_dim"],
                         "dropout": model_args["dropout"],
@@ -493,7 +386,7 @@ class Pipeline(object):
                     model = BaselineModel(
                         dim=model_args["embedding_dim"],
                         alphabet=self.alphabet,
-                        num_transformer_blocks=model_args["num_transformer_blocks"],
+                        num_attn_layers=model_args["num_attn_layers"],
                         encoder_parallel_device=dev0,
                         decoder_parallel_device=dev1,
                         **transformer_config,

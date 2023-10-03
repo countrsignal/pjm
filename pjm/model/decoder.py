@@ -8,17 +8,16 @@ class BaselineDecoder(nn.Module):
   def __init__(
       self,
       dim,
-      num_layers,
       alphabet_size,
+      num_attn_layers,
       **kwargs,
       ):
     super(BaselineDecoder, self).__init__()
     self.stack = nn.ModuleList([
-                Transformer(dim, **kwargs) for _ in range(num_layers)
+                Transformer(dim, depth=1, **kwargs) for _ in range(num_attn_layers)
                 ])
     self.stack.append(AttnLayerNorm(dim))
     self.stack.append(nn.Linear(dim, alphabet_size, bias=False))
-    # nn.init.zeros_(self.stack[-1].weight)
 
   def forward(self, x, attn_mask):
     for layer in self.stack[:-2]:
@@ -111,10 +110,6 @@ class MultiModalDecoder(nn.Module):
                 ])
     self.stack.append(AttnLayerNorm(dim))
     self.stack.append(nn.Linear(dim, alphabet_size, bias=False))
-
-    #logit_std = (dim ** -0.5) * ((2 * num_layers) ** -0.5)
-    #nn.init.normal_(self.stack[-1].weight, mean=0, std=logit_std)
-    # nn.init.zeros_(self.stack[-1].weight)
   
   def forward(self, x, y, attn_mask):
     for layer in self.stack[:-2]:

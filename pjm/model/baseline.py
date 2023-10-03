@@ -25,7 +25,7 @@ class BaselineModel(nn.Module):
         self,
         dim: int,
         alphabet: Alphabet,
-        num_transformer_blocks: int,
+        num_attn_layers: int,
         encoder_parallel_device: Optional[str] = None,
         decoder_parallel_device: Optional[str] = None,
         **kwargs
@@ -49,15 +49,19 @@ class BaselineModel(nn.Module):
             padding_idx=self.pad_idx
         )
         self.encoder = nn.ModuleList([
-            Transformer(dim, **kwargs) for _ in range(num_transformer_blocks)
+            Transformer(dim, depth=1, **kwargs) for _ in range(num_attn_layers)
         ])
         self.decoder = BaselineDecoder(
             dim=dim,
-            num_layers=num_transformer_blocks,
+            num_attn_layers=num_attn_layers,
             alphabet_size=len(alphabet.all_toks),
             **kwargs
         )
         self.sequence_cls_norm = AttnLayerNorm(dim)
+    
+    def register_devices(self, encoder_parallel_device, decoder_parallel_device):
+        self.encoder_parallel_device = encoder_parallel_device
+        self.decoder_parallel_device = decoder_parallel_device
     
     def dispatch_params(self):
         if self.encoder_parallel_device is not None:
@@ -176,4 +180,4 @@ class BaselineModel(nn.Module):
         logits = rearrange(logits, 'b n c -> b c n')
         cross_entropy_loss = ce(logits, decoder_labels, ignore_index=self.pad_idx)
 
-        return cross_entropy_loss
+        return (cross_entropy_loss, )

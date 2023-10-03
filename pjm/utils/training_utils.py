@@ -1,31 +1,275 @@
 from typing import Optional, Union, Tuple, Dict
 from multiprocessing import current_process
+from argparse import ArgumentParser
 from abc import ABC, abstractmethod
 from inspect import getfullargspec
+from tqdm import tqdm
+import numpy as np
 import logging
+import random
+import yaml
 import sys
+import os
 
+import wandb
+import torch
 from torch import nn
+import torch.distributed as dist
+import torch.multiprocessing as mp
+from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import LambdaLR
 
-from .data import  AF2SCN
-from .tokenizer import Alphabet
-from ..model.experimental import standard_structure_module, CoCa
+from ..tokenizer import Alphabet
+from ..data import Collator, AF2SCN
+from ..model.multimodal import MMPLM
+from ..model.baseline import BaselineModel
+from ..model.experimental import CoCa
+from ..model.gvp_gnn import standard_structure_module
 
 
-def _setup_logger(logger_name: str, log_level: int):
-    logger = logging.getLogger(name=logger_name)
-    logger.setLevel(log_level)
+_MM_LOSS_LOG_ = [
+    "Training Loss",
+    "CLIP Loss",
+    "Masked Residue Loss",
+    "Node MSE Loss",
+    "Distogram Loss (Alphas)",
+    "Distogram Loss (Betas)",
+]
 
-    # create console handler and set level
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(log_level)
 
-    # create formatter
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
+def set_training_env_vars():
+    os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
 
-    return logger
+
+def seed_everything(seed):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def training_parser():
+    parser = ArgumentParser()
+    parser.add_argument("--config_path", type=str, help="Set path to config file.")
+    parser.add_argument("--dataset_path", type=str, help="Set path to pre-computed data.")
+    parser.add_argument("--multi_modal", action="store_true", help="Set to train multi-modal model.")
+    parser.add_argument("--log_interval", type=int, default=200, help="Set logging frequency.")
+    parser.add_argument("--val_interval", type=int, default=2000, help="Set logging frequency.")
+    parser.add_argument("--run_name", type=str, help="Name for the experiment.")
+    parser.add_argument("--tags", nargs="+", help="W&B run tags.")
+    parser.add_argument("--detect_anomaly", action="store_true", help="Set to aid in debugging.")
+    return parser.parse_args()
+
+
+def setup_ddp(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '8888'
+    dist.init_process_group('gloo', rank=rank, world_size=world_size)
+
+
+def launch_ddp(training_fn, world_size, model_args, dataloader_args, unit_test_callback, early_stop_callback):
+    mp.spawn(training_fn,
+             args=(world_size, model_args, dataloader_args, unit_test_callback, early_stop_callback),
+             nprocs=world_size,
+             join=True)
+
+
+def cleanup():
+    dist.destroy_process_group()
+
+
+def build_model(config, alphabet, multi_modal=True, **kwargs):
+    if multi_modal:
+        model =  MMPLM(config=config, alphabet=alphabet, **kwargs)
+    else:
+        transformer_config = {
+            "heads": config["num_attns_heads"],
+            "head_dim": config["attn_head_dim"],
+            "dropout": config["dropout"],
+        }
+        model = BaselineModel(
+            dim=config["embedding_dim"],
+            alphabet=alphabet,
+            num_attn_layers=config["num_attn_layers"],
+            **transformer_config,
+        )
+    return model
+
+
+def build_optimizer(model, config):
+    if config["optimizer"]["type"].lower() == "adam":
+        opt = torch.optim.Adam(
+            params=model.parameters(),
+            lr=config["optimizer"]["learning_rate"],
+            weight_decay=config["optimizer"]["weight_decay"],
+        )
+    elif config["optimizer"]["type"].lower() == "adamw":
+        opt = torch.optim.AdamW(
+            params=model.parameters(),
+            lr=config["optimizer"]["learning_rate"],
+            weight_decay=config["optimizer"]["weight_decay"],
+        )
+    else:
+        raise NotImplementedError(f"Optimizer {config['optimizer']['type']} not recognized.")
+    if config[["optimizer"]]["lr_scheduler"] is not None:
+        lr_scheduler = WarmupLinearSchedule(optimizer=opt, **config[["optimizer"]]["lr_scheduler"])
+    else:
+        lr_scheduler = None
+    return opt, lr_scheduler
+
+
+def build_default_alphabet():
+    return Alphabet(
+        prepend_toks = ("<sos>", "<eos>", "<unk>"),
+        append_toks = ("<cls>", "<pad>", "<mask>"),
+        prepend_bos = True,
+        append_eos = True,
+        use_msa = False
+    )
+
+
+def multimodal_assembler(config_path: str):
+    # Load config yaml
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Load alphabet
+    alphabet = build_default_alphabet()
+    # Initialize collator
+    collate_fn = Collator(config=config['data']['collate'], tokenizer=alphabet.get_batch_converter())
+    # Initialize traingin and validation dataloaders
+    train_loader = DataLoader(
+        dataset=AF2SCN(**config['data']['train_dataset']),
+        collate_fn=collate_fn,
+        shuffle=True,
+        **config['data']['loader']
+    )
+    val_loader = DataLoader(
+        dataset=AF2SCN(**config['data']['val_dataset']),
+        collate_fn=collate_fn,
+        shuffle=False,
+        **config['data']['loader']
+    )
+
+    # Initialize model
+    model = MMPLM(
+        config=config['model'],
+        alphabet=alphabet,
+    )
+    return config, train_loader, val_loader, model
+
+
+def forward_pass_hook(model, *args, **kwargs):
+    if torch.cuda.is_bf16_supported():
+        with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=True):
+            losses = model(*args, **kwargs)
+            total_loss = sum(losses) if len(losses) > 1 else losses[0]
+    else:
+        losses = model(*args, **kwargs)
+        total_loss = sum(losses)  if len(losses) > 1 else losses[0]
+    return total_loss, *losses
+
+
+def backward_pass_hook(loss, optimizer, scheduler):
+    optimizer.zero_grad()
+    loss.backward()
+
+    optimizer.step()
+    if scheduler is not None:
+        scheduler.step()
+
+
+def training_step_hook(debug, model, optimizer, scheduler, *args, **kwargs):
+    if debug:
+        with torch.autograd.detect_anomaly():
+            losses = forward_pass_hook(model, *args, **kwargs)
+            backward_pass_hook(losses[0], optimizer, scheduler)
+    else:
+        losses = forward_pass_hook(model, *args, **kwargs)
+        backward_pass_hook(losses[0], optimizer, scheduler)
+    return losses
+
+
+def logging_hook(multi_modal, losses, lr_scheduler):
+    log_dict = {}
+    if multi_modal:
+        for idx, l, in enumerate(losses):
+            log_dict[_MM_LOSS_LOG_[idx]] = l.detach().cpu().item()
+    else:
+        log_dict["Training Loss"] = losses[0].detach().cpu().item()
+    
+    if lr_scheduler is not None:
+        log_dict["Learning Rate"] = lr_scheduler.get_last_lr()[0]
+    return log_dict
+
+
+def init_progress_bar(epoch_index, train_loss, val_loss, log_interval, train_loader):
+    return tqdm(
+        enumerate(train_loader),
+        desc=f"Epoch {epoch_index + 1}: Train Loss ({train_loss}), Best Val Loss ({val_loss})",
+        total=len(train_loader),
+        mininterval=log_interval,
+    )
+
+
+def init_runner(run_name, config, tags):
+    runner = wandb.init(
+        dir-".",
+        name=run_name,
+        project="joint-embeddings",
+        tags=tags,
+        config=config,
+    )
+    return runner
+
+
+def write_to_logger(runner, log_dict):
+    runner.log(log_dict)
+
+
+def validation_step_hook(multi_modal, val_loader, model, *args, **kwargs):
+    # Average loss across all batches
+    if multi_modal:
+        validation_loss = {l: [] for l in _MM_LOSS_LOG_[1:]}
+        validation_loss["Validation Loss"] = []
+    else:
+        validation_loss = {"Validation Loss": []}
+    # Enter evaluation mode
+    model.eval()
+    # Identify model device
+    device = next(model.parameters()).device if model.decoder_parallel_device is None else model.decoder_parallel_device
+    for batch_index, batch in enumerate(val_loader):
+        seuqence, *structure = batch.process_data(device)
+        with torch.no_grad():
+            losses = forward_pass_hook(model, seuqence, structure, *args, **kwargs)
+        if multi_modal:
+            for idx, l in enumerate(losses):
+                if idx == 0:
+                    validation_loss["Validation Loss"].append(l.detach().cpu().item())
+                else:
+                    validation_loss[_MM_LOSS_LOG_[idx]].append(l.detach().cpu().item())
+        else:
+            validation_loss["Validation Loss"].append(losses[0].detach().cpu().item())
+    # Return model to training mode
+    model.train()
+    # Return average loss across all batches
+    return {k: np.mean(v) for k, v in validation_loss.items()}
+
+
+def write_checkpoint(model, optimizer, scheduler, epoch, config, path):
+    checkpoint = {
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "scheduler": scheduler.state_dict(),
+        "epoch": epoch,
+        "config": config,
+    }
+    torch.save(checkpoint, path)
 
 
 def load_jem(
@@ -125,6 +369,49 @@ def load_model(
         raise NotImplementedError(f"Model type {model_args['model_type']} not implemented")
 
 
+def _setup_logger(logger_name: str, log_level: int):
+    logger = logging.getLogger(name=logger_name)
+    logger.setLevel(log_level)
+
+    # create console handler and set level
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(log_level)
+
+    # create formatter
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    return logger
+
+
+def _early_stop_enabled(early_stop):
+    return issubclass(early_stop.__class__, EarlyStopping)
+
+
+def _unit_test_enabled(unit_test):
+    return issubclass(unit_test.__class__, UnitTest)
+
+
+class WarmupLinearSchedule(LambdaLR):
+    """ Linear warmup and then linear decay.
+        Linearly increases learning rate from 0 to 1 over `warmup_steps` training steps.
+        Linearly decreases learning rate from 1. to 0. over remaining `t_total - warmup_steps`
+        steps.
+    """
+    def __init__(self, optimizer, warmup_steps, t_total, last_epoch=-1):
+        self.warmup_steps = warmup_steps
+        self.t_total = t_total
+        super(WarmupLinearSchedule, self).__init__(
+            optimizer, self.lr_lambda, last_epoch=last_epoch)
+
+    def lr_lambda(self, step):
+        if step < self.warmup_steps:
+            return float(step) / float(max(1, self.warmup_steps))
+        return max(0.0, float(self.t_total - step) / float(
+            max(1.0, self.t_total - self.warmup_steps)))
+
+
 class UnitTest(ABC):
 
     def __init__(self):
@@ -183,3 +470,57 @@ class Overfit(UnitTest):
         self.msg("Unit test model hook")
         self.msg(f"Loading model {model_args['model_type']}")
         return load_model(devices, alphabet, model_args)
+
+
+class EarlyStopping(object):
+    def __init__(self, patience: int = 5, reduce_factor: float = 0.005, reduce_ratio: float = 0.5):
+        self.patience = patience
+        self.counter = 0
+        self.early_stop = False
+        self.reduce_factor = reduce_factor
+        self.reduce_ratio = reduce_ratio
+        self.logger = _setup_logger(logger_name=str(self), log_level=logging.INFO)
+    
+    def __str__(self):
+        status = "IN-PROGRESS" if not self.early_stop else "STOPPED"
+        return f"EarlyStopping(patience={self.patience}, counter={self.counter}, status={status})"
+    
+    def __repr__(self):
+        return self.__str__()
+    
+    def msg(self, message: str):
+        process_name = current_process().name
+        if (process_name == 'MainProcess') or (process_name == 'SpawnProcess-1'):
+            self.logger.info(message)
+
+    def get_early_stop_dataset(self, dataset: AF2SCN) -> AF2SCN:
+        if self.counter < self.patience:
+            self.counter += 1
+            num_examples = int(len(dataset) * self.reduce_factor)
+            amount = int(num_examples / self.reduce_ratio)
+            new_manifest = {}
+            af2_count, scn_count = 0, 0
+            for k, v in dataset.manifest.items():
+                if k.split('-')[0] == 'AF':
+                    if af2_count < amount:
+                        new_manifest[k] = v
+                        af2_count += 1
+                    else:
+                        continue
+                else:
+                    if scn_count < amount:
+                        new_manifest[k] = v
+                        scn_count += 1
+                    else:
+                        continue
+            dataset._overwrite_manifest(new_manifest=new_manifest)
+        else:
+            self.early_stop = True
+        
+        return dataset
+    
+    def update_optimizer(self, optimizer: torch.optim.Optimizer):
+        if self.early_stop:
+            optimizer.param_groups[0]['weight_decay'] = 0.0
+            self.msg(f"Setting weight decay to 0.0")
+
