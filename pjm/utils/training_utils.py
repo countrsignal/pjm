@@ -271,7 +271,7 @@ def validation_step_hook(multi_modal, val_loader, model, *args, **kwargs):
                 if idx == 0:
                     validation_loss["Validation Loss"].append(l.detach().cpu().item())
                 else:
-                    validation_loss[_MM_LOSS_LOG_[idx]].append(l.detach().cpu().item())
+                    validation_loss["Val " + _MM_LOSS_LOG_[idx]].append(l.detach().cpu().item())
         else:
             validation_loss["Validation Loss"].append(losses.detach().cpu().item())
     # Return model to training mode
