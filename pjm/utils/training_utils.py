@@ -230,7 +230,7 @@ def init_progress_bar(epoch_index, train_loss, val_loss, log_interval, train_loa
 
 def init_runner(run_name, tags, config):
     runner = wandb.init(
-        dir-".",
+        dir=".",
         name=run_name,
         project="protein-language-modeling",
         tags=tags,
