@@ -222,7 +222,7 @@ def logging_hook(multi_modal, losses, lr_scheduler):
 def init_progress_bar(epoch_index, train_loss, val_loss, log_interval, train_loader):
     return tqdm(
         enumerate(train_loader),
-        desc=f"Epoch {epoch_index + 1}: Train Loss ({train_loss}), Best Val Loss ({val_loss})",
+        desc=f"Epoch {epoch_index + 1} | Training Step Loss ({train_loss}) | Best Validation Loss ({val_loss})",
         total=len(train_loader),
         mininterval=log_interval,
     )
