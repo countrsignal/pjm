@@ -79,6 +79,8 @@ def main():
                 if not args.debug:
                     if val_monitor.watch(global_step):
                         val_monitor.evaluation_step(epoch_index, run, model, optimizer, lr_scheduler, ckpt_model=True)
+
+    info_log.info("Training complete.")
     wandb.finish()
 
 
