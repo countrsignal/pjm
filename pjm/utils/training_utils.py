@@ -3,6 +3,7 @@ from multiprocessing import current_process
 from argparse import ArgumentParser
 from abc import ABC, abstractmethod
 from inspect import getfullargspec
+from copy import deepcopy
 from tqdm import tqdm
 import numpy as np
 import logging
@@ -35,6 +36,8 @@ _MM_LOSS_LOG_ = [
     "Distogram Loss (Alphas)",
     "Distogram Loss (Betas)",
 ]
+
+_SPLITS_ = ["training", "validation", "test"]
 
 
 def set_training_env_vars():
@@ -84,6 +87,17 @@ def launch_ddp(training_fn, world_size, model_args, dataloader_args, unit_test_c
 
 def cleanup():
     dist.destroy_process_group()
+
+
+def _update_config_(config, key, value):
+    config.update({key: value})
+
+
+def _override_config_(config, key, value):
+    if key in config:
+        config[key] = value
+    else:
+        raise KeyError(f"Key {key} not found in config.")
 
 
 def build_model(config, alphabet, multi_modal=True, **kwargs):
@@ -146,17 +160,11 @@ def assembler(config_path: str, multi_modal: bool = True):
     # Initialize collator
     model_type = "mmplm" if multi_modal else "baseline"
     collate_fn = Collator(config=config['model'][model_type]['data']['collate'], tokenizer=alphabet.get_batch_converter())
-    # Initialize traingin and validation dataloaders
+    _update_config_(config['model'][model_type]['data']['loader'], 'collate_fn', collate_fn)
+    # Initialize training dataloaders
     train_loader = DataLoader(
-        dataset=AF2SCN(**config['model'][model_type]['data']['train_dataset']),
-        collate_fn=collate_fn,
+        dataset=AF2SCN(**config['model'][model_type]['data']['training']),
         shuffle=True,
-        **config['model'][model_type]['data']['loader']
-    )
-    val_loader = DataLoader(
-        dataset=AF2SCN(**config['model'][model_type]['data']['val_dataset']),
-        collate_fn=collate_fn,
-        shuffle=False,
         **config['model'][model_type]['data']['loader']
     )
 
@@ -166,7 +174,7 @@ def assembler(config_path: str, multi_modal: bool = True):
         alphabet=alphabet,
         multi_modal=multi_modal,
     )
-    return config, train_loader, val_loader, model
+    return config, train_loader, model
 
 
 def forward_pass_hook(multi_modal, model, *args, **kwargs):
@@ -543,3 +551,52 @@ class EarlyStopping(object):
             optimizer.param_groups[0]['weight_decay'] = 0.0
             self.msg(f"Setting weight decay to 0.0")
 
+
+class EvalMonitor(object):
+    def __init__(self, split: str, multi_modal: bool, monitor_interval: int, config: dict):
+        super().__init__()
+        assert split in _SPLITS_[1:], f"Split {split} not recognized."
+        self.split = split
+        self.multi_modal = multi_modal
+        self.monitor_interval = monitor_interval
+        self.loader = DataLoader(
+            dataset=AF2SCN(**config['data'][split]),
+            shuffle=False,
+            **config['data']['loader']
+        )
+        self.best_eval_loss = float("inf")
+        self.experiment_config = deepcopy(config)
+    
+    def __str__(self):
+        return f"EvalMonitor(split={self.split}, multi_modal={self.multi_modal}, monitor_interval={self.monitor_interval})"
+    
+    def __repr__(self):
+        return self.__str__()
+    
+    def watch(self, global_step):
+        if (global_step % self.monitor_interval) == 0:
+            return True
+        else:
+            return False
+    
+    def evaluation_step(self, epoch_index, runner, model, optimizer, scheduler, ckpt_model=True):
+        if self.split == "validation":
+            eval_log_dict = validation_step_hook(self.multi_modal, self.loader, model)
+            eval_loss = eval_log_dict["Validation Loss"]
+        elif self.split == "test":
+            raise NotImplementedError("Test split not implemented.")
+        else:
+            raise ValueError(f"Split {self.split} not recognized.")
+        
+        runner.log(eval_log_dict)
+        if ckpt_model:
+            if eval_loss < self.best_eval_loss:
+                self.best_eval_loss = eval_loss
+                write_checkpoint(
+                    model,
+                    optimizer,
+                    scheduler,
+                    epoch_index,
+                    self.experiment_config,
+                    os.path.join(runner.dir, f"{runner.name}_ckpt.pth"),
+                )

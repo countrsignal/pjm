@@ -11,13 +11,13 @@ model:
       loader:
         batch_size: 32
         num_workers: 0
-      train_dataset:
+      training:
         _filter_by_plddt_coverage: null
         _sequence_only_baseline: true
         dataset_path: /scr/dap181/dataset/
         max_len: 500
         split: train
-      val_dataset:
+      validation:
         _filter_by_plddt_coverage: null
         _sequence_only_baseline: true
         dataset_path: /scr/dap181/dataset/
@@ -86,13 +86,13 @@ model:
       loader:
         batch_size: 32
         num_workers: 0
-      train_dataset:
+      training:
         _filter_by_plddt_coverage: null
         _sequence_only_baseline: false
         dataset_path: /scr/dap181/dataset/
         max_len: 500
         split: train
-      val_dataset:
+      validation:
         _filter_by_plddt_coverage: null
         _sequence_only_baseline: false
         dataset_path: /scr/dap181/dataset/

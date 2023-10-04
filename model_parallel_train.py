@@ -1,39 +1,49 @@
 import os
+import logging
 from functools import partial
 
 import wandb
+from torch.cuda import is_bf16_supported, device_count
 
 from pjm.utils.training_utils import (
     set_training_env_vars,
     seed_everything,
+    _setup_logger,
     training_parser,
     build_optimizer,
     assembler,
     training_step_hook,
     logging_hook,
-    validation_step_hook,
     init_progress_bar,
     init_runner,
     write_to_logger,
-    write_checkpoint,
+    EvalMonitor,
 )
 
 
 def main():
     args = training_parser()
     seed_everything(args.seed)
+    info_log = _setup_logger(logger_name="GENERAL", log_level=logging.INFO)
+    info_log.info(f"Number of GPUs: {device_count()}")
+    info_log.info(f"BFloat16 supported: {is_bf16_supported()}")
 
-    config, train_loader, val_loader, model = assembler(args.config_path, args.multi_modal)
+    config, train_loader, model = assembler(args.config_path, args.multi_modal)
     model.register_devices(*args.gpu_devices)
     optimizer, lr_scheduler = build_optimizer(model, config)
     model.dispatch_params()
 
     model_type = "mmplm" if args.multi_modal else "baseline"
     run = init_runner(args.run_name, args.tags, config["model"][model_type])
+    val_monitor = EvalMonitor(
+        split="validation",
+        multi_modal=args.multi_modal,
+        monitor_interval=args.val_interval,
+        config=config["model"][model_type]
+    )
 
     # Training loop
     global_step = 0
-    best_val_loss = float("inf")
     prev_train_loss = float("inf")
     if args.multi_modal:
         # NOTE: for multi-modal PLM, sequences AND structures are sent to decoder module first
@@ -46,7 +56,7 @@ def main():
         progress_bar = init_progress_bar(
             epoch_index,
             prev_train_loss,
-            best_val_loss,
+            val_monitor.best_eval_loss,
             args.log_interval,
             train_loader,
         )
@@ -63,24 +73,12 @@ def main():
                 write_to_logger(run, log_dict)
                 # Update progress bar
                 prev_train_loss = log_dict["Training Loss"] if args.multi_modal else log_dict["Masked Residue Loss"]
-                progress_bar.set_description(f"Epoch {epoch_index + 1} | Training Step Loss {prev_train_loss:.4f} | Best Validation Loss {best_val_loss:.4f}")
+                progress_bar.set_description(f"Epoch {epoch_index + 1} | Training Step Loss {prev_train_loss:.4f} | Best Validation Loss {val_monitor.best_eval_loss:.4f}")
 
                 # Validation
                 if not args.debug:
-                    if (global_step % args.val_interval) == 0:
-                        val_log_dict = validation_step_hook(args.multi_modal, val_loader, model)
-                        run.log(val_log_dict)
-                        val_loss = val_log_dict["Validation Loss"]
-                        if val_loss < best_val_loss:
-                            best_val_loss = val_loss
-                            write_checkpoint(
-                                model,
-                                optimizer,
-                                lr_scheduler,
-                                epoch_index,
-                                config,
-                                os.path.join(run.dir, f"{args.run_name}_ckpt.pth"),
-                            )
+                    if val_monitor.watch(global_step):
+                        val_monitor.evaluation_step(epoch_index, run, model, optimizer, lr_scheduler, ckpt_model=True)
     wandb.finish()
 
 
