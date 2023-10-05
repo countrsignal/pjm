@@ -7,17 +7,17 @@ from .attention import Transformer, CrossAttention, AttnLayerNorm, Residual
 class BaselineDecoder(nn.Module):
   def __init__(
       self,
-      dim,
+      embedding_dim,
       alphabet_size,
       num_attn_layers,
       **kwargs,
       ):
     super(BaselineDecoder, self).__init__()
     self.stack = nn.ModuleList([
-                Transformer(dim, depth=1, **kwargs) for _ in range(num_attn_layers)
+                Transformer(embedding_dim, depth=1, **kwargs) for _ in range(num_attn_layers)
                 ])
-    self.stack.append(AttnLayerNorm(dim))
-    self.stack.append(nn.Linear(dim, alphabet_size, bias=False))
+    self.stack.append(AttnLayerNorm(embedding_dim))
+    self.stack.append(nn.Linear(embedding_dim, alphabet_size, bias=False))
 
   def forward(self, x, attn_mask):
     for layer in self.stack[:-2]:
@@ -29,7 +29,7 @@ class BaselineDecoder(nn.Module):
 class CXDecoderBlock(nn.Module):
   def __init__(
       self,
-      dim,
+      embedding_dim,
       depth,
       heads,
       head_dim,
@@ -37,10 +37,10 @@ class CXDecoderBlock(nn.Module):
       ):
     super(CXDecoderBlock, self).__init__()
     self.layers = nn.ModuleList([
-            Transformer(dim, depth, heads, head_dim, dropout),
-            Transformer(dim, depth, heads, head_dim, dropout),
-            Residual(CrossAttention(dim, heads, head_dim, dropout)),
-            Residual(CrossAttention(dim, heads, head_dim, dropout))
+            Transformer(embedding_dim, depth, heads, head_dim, dropout),
+            Transformer(embedding_dim, depth, heads, head_dim, dropout),
+            Residual(CrossAttention(embedding_dim, heads, head_dim, dropout)),
+            Residual(CrossAttention(embedding_dim, heads, head_dim, dropout))
     ])
 
   def forward(self, x, y, attn_mask):
@@ -60,7 +60,7 @@ class CXDecoderBlock(nn.Module):
 class StandardDecoderBlock(nn.Module):
   def __init__(
       self,
-      dim,
+      embedding_dim,
       depth,
       heads,
       head_dim,
@@ -68,9 +68,9 @@ class StandardDecoderBlock(nn.Module):
       ):
     super(StandardDecoderBlock, self).__init__()
     self.layers = nn.ModuleList([
-            Transformer(dim, depth, heads, head_dim, dropout),
-            Transformer(dim, depth, heads, head_dim, dropout),
-            Residual(CrossAttention(dim, heads, head_dim, dropout))
+            Transformer(embedding_dim, depth, heads, head_dim, dropout),
+            Transformer(embedding_dim, depth, heads, head_dim, dropout),
+            Residual(CrossAttention(embedding_dim, heads, head_dim, dropout))
     ])
 
   def forward(self, x, y, attn_mask):

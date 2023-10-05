@@ -219,16 +219,16 @@ class CrossAttention(nn.Module):
 
 
 class Transformer(nn.Module):
-  def __init__(self, dim, depth, heads, head_dim, dropout = 0.1):
+  def __init__(self, embedding_dim, depth, num_attn_heads, attn_head_dim, dropout = 0.1):
     super().__init__()
     self.layers = nn.ModuleList([])
     for _ in range(depth):
       self.layers.append(
           Residual(
               Attention(
-                  dim,
-                  heads = heads,
-                  head_dim = head_dim,
+                  embedding_dim,
+                  heads = num_attn_heads,
+                  head_dim = attn_head_dim,
                   dropout = dropout,
                   )
               )

@@ -23,7 +23,7 @@ Alphabet = NewType('Alphabet', object)
 class BaselineModel(nn.Module):
     def __init__(
         self,
-        dim: int,
+        embedding_dim: int,
         alphabet: Alphabet,
         num_attn_layers: int,
         encoder_parallel_device: Optional[str] = None,
@@ -45,14 +45,14 @@ class BaselineModel(nn.Module):
 
         self.embedding_layer = nn.Embedding(
             len(alphabet.all_toks),
-            dim,
+            embedding_dim,
             padding_idx=self.pad_idx
         )
         self.encoder = nn.ModuleList([
-            Transformer(dim, depth=1, **kwargs) for _ in range(num_attn_layers)
+            Transformer(embedding_dim, depth=1, **kwargs) for _ in range(num_attn_layers)
         ])
         self.decoder = BaselineDecoder(
-            dim=dim,
+            embedding_dim=embedding_dim,
             num_attn_layers=num_attn_layers,
             alphabet_size=len(alphabet.all_toks),
             **kwargs

@@ -35,10 +35,10 @@ def standard_structure_module(
   for _ in range(num_attn_layers):
     encoder.append(
         Transformer(
-            dim=embedding_dim,
+            embedding_dim=embedding_dim,
             depth=1,
-            heads=num_attn_heads,
-            head_dim=attn_head_dim,
+            num_attn_heads=num_attn_heads,
+            attn_head_dim=attn_head_dim,
             dropout=dropout,
         )
     )

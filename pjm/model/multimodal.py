@@ -290,16 +290,16 @@ class Denoiser(nn.Module):
 
 
 class ProteinLM(nn.Module):
-    def __init__(self, alphabet, dim, num_attn_layers, **kwargs):
+    def __init__(self, alphabet, embedding_dim, num_attn_layers, **kwargs):
         super().__init__()
         
         self.embedding_layer = nn.Embedding(
             len(alphabet.all_toks),
-            dim,
+            embedding_dim,
             padding_idx=alphabet.padding_idx,
         )
         self.encoder = nn.ModuleList([
-            Transformer(dim=dim, depth=1, **kwargs) for _ in range(num_attn_layers)
+            Transformer(dim=embedding_dim, depth=1, **kwargs) for _ in range(num_attn_layers)
         ])
     
     def forward(self, x, attn_mask):

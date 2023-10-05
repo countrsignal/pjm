@@ -21,6 +21,8 @@ def from_pretrained(
     sequence_only = {}
     ckpt = torch.load(checkpoint_path, map_location=torch.device("cpu"))
     if model_type.startswith("mmplm"):
+        ### Load model config and initialize embedder
+        model_args = ckpt["config"]["architectures"]["sequence"]
         for k, v in ckpt["model"].items():
 
             # Ignore everything other than the sequence encoder
@@ -31,13 +33,13 @@ def from_pretrained(
 
             if k.startswith("embedding_layer"):
                 sequence_only[k] = v
-            elif k.startswith("layers"):
-                sequence_only[k.replace("layers.", "sequence_encoder")] = v
+            elif k.startswith("encoder"):
+                sequence_only[k.replace("encoder", "sequence_encoder")] = v
 
     elif model_type.startswith("baseline"):
-        for k, v in ckpt["model_state_dict"].items():
-
-            k = k.replace("module.", "") if k.startswith("module.") else k
+        ### Load model config and initialize embedder
+        model_args = ckpt["config"]["architectures"]
+        for k, v in ckpt["model"].items():
 
             if k.startswith("embedding_layer"):
                 sequence_only[k] = v
@@ -47,21 +49,11 @@ def from_pretrained(
                 continue
     else:
         raise NotImplementedError
-
-    ### Load model config and initialize embedder
-    model_args = ckpt["config"]["architectures"]
     del(ckpt)
 
-    transformer_config = {
-        "heads": model_args["num_attns_heads"],
-        "head_dim": model_args["attn_head_dim"],
-        "dropout": model_args["dropout"],
-    }
     embedder = Embedder(
-        embedding_dim=model_args["embedding_dim"],
         alphabet=alphabet,
-        num_attn_blocks=model_args["num_attn_blocks"],
-        **transformer_config,
+        **model_args,
     )
 
     embedder.load_state_dict(sequence_only, strict=True)
@@ -74,7 +66,7 @@ class Embedder(nn.Module):
             self,
             embedding_dim: int,
             alphabet: Alphabet,
-            num_attn_blocks: int,
+            num_attn_layers: int,
             **kwargs,
         ) -> None:
         super().__init__()
@@ -91,7 +83,7 @@ class Embedder(nn.Module):
             padding_idx=self.pad_idx
         )
         self.encoder = nn.ModuleList(
-            [Transformer(self.dim, **kwargs) for _ in range(num_attn_blocks)]
+            [Transformer(self.dim, depth=1, **kwargs) for _ in range(num_attn_layers)]
         )
     
     def embed_sequence(self, sequences: LongTensor, attn_mask: Tensor) -> Tuple[Optional[Tensor], Tensor]:
