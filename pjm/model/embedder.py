@@ -19,7 +19,7 @@ def from_pretrained(
     ckpt = torch.load(checkpoint_path, map_location=torch.device("cpu"))
     if model_type.startswith("mmplm"):
         ### Load model config and initialize embedder
-        model_args = ckpt["config"]["architectures"]["sequence"]
+        model_args = ckpt["config"]["architecture"]["sequence"]
         for k, v in ckpt["model"].items():
 
             # Ignore everything other than the sequence encoder
@@ -31,17 +31,17 @@ def from_pretrained(
             if k.startswith("embedding_layer"):
                 sequence_only[k] = v
             elif k.startswith("encoder"):
-                sequence_only[k.replace("encoder", "sequence_encoder")] = v
+                sequence_only[k] = v
 
     elif model_type.startswith("baseline"):
         ### Load model config and initialize embedder
-        model_args = ckpt["config"]["architectures"]
+        model_args = ckpt["config"]["architecture"]
         for k, v in ckpt["model"].items():
 
             if k.startswith("embedding_layer"):
                 sequence_only[k] = v
             elif k.startswith("encoder"):
-                sequence_only[k.replace("encoder", "sequence_encoder")] = v
+                sequence_only[k] = v
             else:
                 continue
     else:
@@ -52,7 +52,6 @@ def from_pretrained(
         alphabet=alphabet,
         **model_args,
     )
-
     embedder.load_state_dict(sequence_only, strict=True)
     return embedder
 
