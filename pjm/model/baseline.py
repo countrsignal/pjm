@@ -1,4 +1,4 @@
-from typing import Optional, NewType
+from typing import Optional
 
 import torch
 from torch import nn
@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from einops import rearrange
 
-from ..data import Alphabet
+from ..tokenizer import Alphabet
 from .attention import get_attn_mask, Transformer
 from .decoder import BaselineDecoder
 from .masking import (

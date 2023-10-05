@@ -1,9 +1,9 @@
-from typing import NewType, Tuple, Optional
+from typing import Tuple, Optional
 
 import torch
 from torch import nn, Tensor, LongTensor
 
-from ..data import Alphabet
+from ..tokenizer import Alphabet
 from .attention import get_attn_mask, Transformer
 
 
