@@ -1,13 +1,10 @@
 from typing import NewType, Tuple, Optional
 
 import torch
-import torch.nn.functional as F
 from torch import nn, Tensor, LongTensor
 
-from .attention import get_attn_mask, AttnLayerNorm, Transformer
-
-
-Alphabet = NewType('Alphabet', object)
+from ..data import Alphabet
+from .attention import get_attn_mask, Transformer
 
 
 def from_pretrained(

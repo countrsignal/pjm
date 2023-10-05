@@ -1,4 +1,3 @@
-import functools
 from typing import Optional, NewType
 
 import torch
@@ -7,16 +6,14 @@ import torch.nn.functional as F
 
 from einops import rearrange
 
-from .attention import get_attn_mask, AttnLayerNorm, Transformer
+from ..data import Alphabet
+from .attention import get_attn_mask, Transformer
 from .decoder import BaselineDecoder
 from .masking import (
     get_sequence_mask,
     apply_sequence_mask,
     apply_random_token_swap,
 )
-
-
-Alphabet = NewType('Alphabet', object)
 
 
 # Sequence only transformer

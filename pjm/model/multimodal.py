@@ -3,7 +3,7 @@ from math import sqrt
 import dgl
 import torch
 from einops import repeat
-from torch import nn, einsum
+from torch import nn
 import torch.nn.functional as F
 from esm.inverse_folding.gvp_modules import GVPConv
 

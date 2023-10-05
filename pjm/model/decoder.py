@@ -1,4 +1,3 @@
-import torch
 from torch import nn
 
 from .attention import Transformer, CrossAttention, AttnLayerNorm, Residual
