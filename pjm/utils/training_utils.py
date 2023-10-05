@@ -596,7 +596,7 @@ class EvalMonitor(object):
                     model,
                     optimizer,
                     scheduler,
-                    epoch_index,
+                    epoch_index + 1,
                     self.experiment_config,
                     os.path.join(runner.dir, f"{runner.name}_ckpt.pth"),
                 )

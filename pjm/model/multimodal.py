@@ -298,7 +298,7 @@ class ProteinLM(nn.Module):
             dim,
             padding_idx=alphabet.padding_idx,
         )
-        self.layers = nn.ModuleList([
+        self.encoder = nn.ModuleList([
             Transformer(dim=dim, depth=1, **kwargs) for _ in range(num_attn_layers)
         ])
     
@@ -309,7 +309,7 @@ class ProteinLM(nn.Module):
         if h.device != attn_mask.device:
             attn_mask = attn_mask.to(h.device)
         
-        for layer in self.layers:
+        for layer in self.encoder:
             h = layer(h, attn_mask, ar_masking=False)
         return h
 
@@ -358,7 +358,7 @@ class StructureEncoder(nn.Module):
         else:
             raise ValueError("Gather mask not initialized")
     
-    def encode(self, graph, node_feats, edge_feats, attn_mask):
+    def forward(self, graph, node_feats, edge_feats, attn_mask):
         graph, node_feats, edge_feats = self.encoder[0](
             graph, node_feats, edge_feats, None
         )
@@ -478,7 +478,7 @@ class MMPLM(nn.Module):
             router.release("sequences"),
             router["attn_mask"],
         )
-        router["structure_embs"] = self.structure_enc.encode(
+        router["structure_embs"] = self.structure_enc(
             *router.dispatch_data("structures", device=self.encoder_parallel_device),
             router["attn_mask"],
         )

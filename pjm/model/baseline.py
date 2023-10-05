@@ -113,8 +113,8 @@ class BaselineModel(nn.Module):
     
     def embed_sequence(self, sequences, attn_mask):
         h = self.embedding_layer(sequences)
-        for attn_block in self.encoder:
-            h = attn_block(x=h, attn_mask=attn_mask, ar_masking=False)
+        for layers in self.encoder:
+            h = layers(x=h, attn_mask=attn_mask, ar_masking=False)
         
         return h
     
