@@ -28,12 +28,14 @@ def main():
     info_log.info(f"Number of GPUs: {device_count()}")
     info_log.info(f"BFloat16 supported: {is_bf16_supported()}")
 
+    model_type = "mmplm" if args.multi_modal else "baseline"
+    info_log.info(f"Initializing {model_type.upper()} model based on {args.config_path}")
     config, train_loader, model = assembler(args.config_path, args.multi_modal)
+    info_log.info(f"Trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     model.register_devices(*args.gpu_devices)
     optimizer, lr_scheduler = build_optimizer(model, config)
     model.dispatch_params()
 
-    model_type = "mmplm" if args.multi_modal else "baseline"
     run = init_runner(args.run_name, args.tags, config["model"][model_type])
     val_monitor = EvalMonitor(
         split="validation",
@@ -51,6 +53,7 @@ def main():
     else:
         # NOTE: for baseline PLM, sequences are sent to encoder module first
         input_device = model.encoder_parallel_device
+    info_log.info("Beginning training.")
     for epoch_index in range(args.epochs):
         # TQDM progress bar
         progress_bar = init_progress_bar(
