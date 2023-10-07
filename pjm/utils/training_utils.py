@@ -104,16 +104,9 @@ def build_model(config, alphabet, multi_modal=True, **kwargs):
     if multi_modal:
         model =  MMPLM(config=config, alphabet=alphabet, **kwargs)
     else:
-        transformer_config = {
-            "heads": config["num_attn_heads"],
-            "head_dim": config["attn_head_dim"],
-            "dropout": config["dropout"],
-        }
         model = BaselineModel(
-            embedding_dim=config["embedding_dim"],
             alphabet=alphabet,
-            num_attn_layers=config["num_attn_layers"],
-            **transformer_config,
+            **config,
         )
     return model
 
@@ -220,7 +213,7 @@ def logging_hook(multi_modal, losses, lr_scheduler):
         for idx, l, in enumerate(losses):
             log_dict[_MM_LOSS_LOG_[idx]] = l.detach().cpu().item()
     else:
-        log_dict["Masked Residue Loss"] = losses.detach().cpu().item()
+        log_dict["Masked Residue Loss"] = losses[0].detach().cpu().item()
     
     if lr_scheduler is not None:
         log_dict["Learning Rate"] = lr_scheduler.get_last_lr()[0]
@@ -281,7 +274,7 @@ def validation_step_hook(multi_modal, val_loader, model, *args, **kwargs):
                 else:
                     validation_loss["Val " + _MM_LOSS_LOG_[idx]].append(l.detach().cpu().item())
         else:
-            validation_loss["Validation Loss"].append(losses.detach().cpu().item())
+            validation_loss["Validation Loss"].append(losses[0].detach().cpu().item())
     # Return model to training mode
     model.train()
     # Return average loss across all batches
