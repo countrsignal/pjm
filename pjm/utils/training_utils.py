@@ -261,7 +261,7 @@ def validation_step_hook(multi_modal, val_loader, model, *args, **kwargs):
         # NOTE: for baseline PLM, sequences are sent to encoder module first
         input_device = model.encoder_parallel_device
     for batch_index, batch in enumerate(val_loader):
-        seuqence, *structure = batch.process_data(input_device)
+        seuqence, *structure = batch.process_data(input_device, multi_modal)
         with torch.no_grad():
             if multi_modal:
                 losses = forward_pass_hook(True, model, seuqence, structure, *args, **kwargs)
