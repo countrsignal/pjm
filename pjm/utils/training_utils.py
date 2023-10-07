@@ -110,7 +110,7 @@ def build_model(config, alphabet, multi_modal=True, **kwargs):
             "dropout": config["dropout"],
         }
         model = BaselineModel(
-            dim=config["embedding_dim"],
+            embedding_dim=config["embedding_dim"],
             alphabet=alphabet,
             num_attn_layers=config["num_attn_layers"],
             **transformer_config,
