@@ -105,7 +105,7 @@ def build_model(config, alphabet, multi_modal=True, **kwargs):
         model =  MMPLM(config=config, alphabet=alphabet, **kwargs)
     else:
         transformer_config = {
-            "heads": config["num_attns_heads"],
+            "heads": config["num_attn_heads"],
             "head_dim": config["attn_head_dim"],
             "dropout": config["dropout"],
         }
