@@ -82,13 +82,25 @@ class Embedder(nn.Module):
             [Transformer(self.dim, depth=1, **kwargs) for _ in range(num_attn_layers)]
         )
     
-    def embed_sequence(self, sequences: LongTensor, attn_mask: Tensor) -> Tuple[Optional[Tensor], Tensor]:
+    def embed_sequence(self, sequences: LongTensor, attn_mask: Tensor, return_attn_matrices: bool) -> Tuple[Optional[Tensor], Tensor]:
         embs = self.embedding_layer(sequences)
+
+        if return_attn_matrices:
+            attn_matrices = []
+
         for layer in self.encoder:
-            embs = layer(x=embs, attn_mask=attn_mask, ar_masking=False)
-        return embs
+            if return_attn_matrices:
+                embs, attn_mats = layer(x=embs, attn_mask=attn_mask, ar_masking=False, store_attention=True)
+                attn_matrices += attn_mats
+            else:
+                embs = layer(x=embs, attn_mask=attn_mask, ar_masking=False, store_attention=False)
+        
+        if return_attn_matrices:
+            return embs, attn_matrices
+        else:
+            return embs
     
-    def forward(self, sequences: LongTensor) -> Tuple[Optional[Tensor], Tensor]:
+    def forward(self, sequences: LongTensor, return_attn_matrices: bool = False) -> Tuple[Optional[Tensor], Tensor]:
 
         # Mask out pad tokens for sequence data
         attention_mask = get_attn_mask(
@@ -98,4 +110,4 @@ class Embedder(nn.Module):
         )
 
         # Embed sequences
-        return self.embed_sequence(sequences, attention_mask)
+        return self.embed_sequence(sequences, attention_mask, return_attn_matrices)

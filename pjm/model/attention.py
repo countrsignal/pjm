@@ -127,6 +127,12 @@ class Attention(nn.Module):
         # For caching causal mask and rotary embeddings
         self.register_buffer("mask", None, persistent=False)
         self.register_buffer("pos_emb", None, persistent=False)
+
+        # For storing attention matrix
+        self.attention_mat = []
+    
+    def get_attention_matrix(self):
+       return self.attention_mat.pop()
     
     def get_mask(self, n, device):
       if self.mask is not None and self.mask.shape[-1] >= n:
@@ -144,7 +150,7 @@ class Attention(nn.Module):
       self.register_buffer("pos_emb", pos_emb, persistent=False)
       return pos_emb
 
-    def forward(self, x, attn_mask=None, ar_masking=False):
+    def forward(self, x, attn_mask=None, ar_masking=False, store_attention=False):
       b, n, _, device, h = *x.shape, x.device, self.heads
       qkv = self.to_qkv(x).chunk(3, dim = -1)
       q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), qkv)
@@ -166,6 +172,8 @@ class Attention(nn.Module):
       
       # Attention
       attn = torch.nn.functional.softmax(dots, dim=-1)
+      if store_attention:
+        self.attention_mat.append(attn.detach().cpu())
 
       out = einsum('b h i j, b h j d -> b h i d', attn, v)
       out = rearrange(out, 'b h n d -> b n (h d)')
@@ -233,10 +241,20 @@ class Transformer(nn.Module):
                   )
               )
           )
-      # Re-initialize weights
-      #nn.init.normal_(self.layers[-1].fn.to_out.weight, std=0.02)
 
-  def forward(self, x, attn_mask, ar_masking=False):
+  def forward(self, x, attn_mask, ar_masking=False, store_attention=False):
+
+    if store_attention:
+      attention_matrices = []
+
     for attn in self.layers:
-      x = attn(x, attn_mask, ar_masking)
-    return x
+      if store_attention:
+        x = attn(x, attn_mask, ar_masking, store_attention=True)
+        attention_matrices.append(attn.fn.get_attention_matrix())
+      else:
+        x = attn(x, attn_mask, ar_masking, store_attention=False)
+    
+    if store_attention:
+      return x, attention_matrices
+    else:
+      return x
