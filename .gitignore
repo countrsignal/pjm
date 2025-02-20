@@ -6,6 +6,7 @@ wandb/
 
 # Ignore checkpoints directory
 expriment_ckpts/
+model_checkpoints/
 
 # Ignore slurm script
 slurm_script.sh
